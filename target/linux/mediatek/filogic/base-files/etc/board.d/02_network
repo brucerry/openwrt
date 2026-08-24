@@ -59,13 +59,15 @@ mediatek_setup_interfaces()
 	keenetic,kn-3711|\
 	keenetic,kn-3811|\
 	livinet,li320|\
+	netis,n6-v2|\
 	netis,nx32u|\
 	qihoo,360t7|\
 	qihoo,360t7-ubi|\
 	routerich,ax3000|\
 	routerich,ax3000-ubootmod|\
 	routerich,be7200|\
-	tenbay,wr3000k)
+	tenbay,wr3000k|\
+	teralink,tl3020-256mb)
 		ucidef_set_interfaces_lan_wan "lan1 lan2 lan3" wan
 		;;
 	asus,tuf-ax4200|\
