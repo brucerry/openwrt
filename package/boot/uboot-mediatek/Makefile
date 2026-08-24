@@ -771,6 +771,18 @@ define U-Boot/mt7986_rfb
   DEPENDS:=+trusted-firmware-a-mt7986-sdmmc-ddr4
 endef
 
+define U-Boot/mt7986_rfbb
+  NAME:=MT7986B RFBB AP
+  BUILD_SUBTARGET:=filogic
+  BUILD_DEVICES:=mediatek_mt7986b-rfbb
+  UBOOT_CONFIG:=mt7986_rfbb
+  UBOOT_IMAGE:=u-boot.fip
+  BL2_BOOTDEV:=spim-nand
+  BL2_SOC:=mt7986
+  BL2_DDRTYPE:=ddr3
+  DEPENDS:=+trusted-firmware-a-mt7986-spim-nand-ddr3
+endef
+
 define U-Boot/mt7986_acer_predator-w6x
   NAME:=Acer Predator Connect W6x
   BUILD_SUBTARGET:=filogic
@@ -1338,6 +1350,7 @@ UBOOT_TARGETS := \
 	mt7986_zyxel_ex5601-t0 \
 	mt7986_zyxel_wx5600-t0 \
 	mt7986_rfb \
+	mt7986_rfbb \
 	mt7987_bananapi_bpi-r4-lite-emmc \
 	mt7987_bananapi_bpi-r4-lite-sdmmc \
 	mt7987_bananapi_bpi-r4-lite-snand \

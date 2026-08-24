@@ -153,6 +153,7 @@ platform_do_upgrade() {
 	xiaomi,redmi-router-ax6000-ubootmod|\
 	xiaomi,mi-router-wr30u-ubootmod|\
 	zyxel,ex5601-t0-ubootmod|\
+	mediatek,mt7986b-rfbb|\
 	zyxel,wx5600-t0-ubootmod)
 		fit_do_upgrade "$1"
 		;;
@@ -358,6 +359,7 @@ platform_check_image() {
 	xiaomi,mi-router-ax3000t-ubootmod|\
 	xiaomi,redmi-router-ax6000-ubootmod|\
 	xiaomi,mi-router-wr30u-ubootmod|\
+	mediatek,mt7986b-rfbb|\
 	zyxel,ex5601-t0-ubootmod)
 		fit_check_image "$1"
 		return $?
