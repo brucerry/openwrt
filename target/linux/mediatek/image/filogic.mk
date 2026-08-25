@@ -2361,7 +2361,7 @@ define Device/mediatek_mt7986b-rfbb
   IMAGE/sysupgrade.itb := append-kernel | \
 	fit gzip $$(KDIR)/image-$$(firstword $$(DEVICE_DTS)).dtb external-static-with-rootfs | append-metadata
   DEVICE_PACKAGES := kmod-usb3 kmod-mt7915e kmod-mt7986-firmware mt7986-wo-firmware \
-	mt7986b-rfbb-caldata
+	mt7986b-rfbb-caldata mt7986b-rfbb-defaults
   ARTIFACTS := preloader.bin bl31-uboot.fip
   ARTIFACT/preloader.bin := mt7986-bl2 spim-nand-ddr3
   ARTIFACT/bl31-uboot.fip := mt7986-bl31-uboot rfbb
