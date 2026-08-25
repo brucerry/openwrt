@@ -2,6 +2,7 @@
 .DS_Store
 .*.swp
 /env
+/dl
 /.toolchain_build_ver
 /bin
 /build_dir
