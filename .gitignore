@@ -3,6 +3,7 @@
 .*.swp
 /env
 /dl
+/.config.old
 /.toolchain_build_ver
 /bin
 /build_dir
@@ -25,3 +26,10 @@ git-src
 .cproject
 .ccache
 .vscode*
+
+# MTK secure boot private key material - never commit private keys to git.
+# Public keys/certs are safe to track; regenerate privates with
+# scripts/gen-mtk-secureboot-keys.sh and keep them outside version control
+# (or in a secrets-managed location) for anything beyond local testing.
+/keys/mtk-secure-boot/*_private_key.pem
+/keys/mtk-secure-boot/fit_key.key
