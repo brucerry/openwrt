@@ -23,6 +23,31 @@ include $(INCLUDE_DIR)/kernel.mk
 include $(INCLUDE_DIR)/trusted-firmware-a.mk
 include $(INCLUDE_DIR)/package.mk
 
+# Vendored, isolated MbedTLS source used only for trusted board boot (TF-A
+# authentication/crypto). Pinned upstream release, fetched by our own build
+# system (no external SDK / manual download step required). Kept separate
+# from the target mbedtls package to avoid PSA-crypto config conflicts.
+MBEDTLS_TFA_NAME:=mbedtls-tfa
+MBEDTLS_TFA_RELEASE:=3.6.7
+MBEDTLS_TFA_SOURCE:=$(MBEDTLS_TFA_NAME)-$(MBEDTLS_TFA_RELEASE).tar.zst
+
+define Download/mbedtls-tfa
+  FILE:=$(MBEDTLS_TFA_SOURCE)
+  PROTO:=git
+  URL:=https://github.com/Mbed-TLS/mbedtls.git
+  SOURCE_VERSION:=da6a8c7b9b8e0c1e236deef2910642657db1a7ec
+  MIRROR_HASH:=a252825a202e11250846cfde926e116efa987e9189b8a6752a644c934abf8267
+  SUBDIR:=$(MBEDTLS_TFA_NAME)-$(MBEDTLS_TFA_RELEASE)
+endef
+
+define Build/Prepare
+	$(eval $(call Download,mbedtls-tfa))
+	$(call Build/Prepare/Default,)
+ifneq ($(strip $(TFA_TRUSTED_BOARD_BOOT)),)
+	$(TAR) -C $(PKG_BUILD_DIR) -xf $(DL_DIR)/$(MBEDTLS_TFA_SOURCE)
+endif
+endef
+
 define Trusted-Firmware-A/Default
   BUILD_TARGET:=mediatek
   TFA_IMAGE:=bl2.img bl31.bin
@@ -40,6 +65,23 @@ define Trusted-Firmware-A/Default
   FIP_OFFSET:=
   FIP_SIZE:=
   SPIM_CTRL:=
+  TFA_TRUSTED_BOARD_BOOT:=
+  TFA_GENERATE_COT:=
+  TFA_OFFLINE_SIGN:=
+  TFA_ANTI_ROLLBACK:=
+  TFA_ROT_KEY:=
+  TFA_BROM_SIGN_KEY:=
+  TFA_SCP_BL2_KEY:=
+  TFA_TRUSTED_WORLD_KEY:=
+  TFA_NON_TRUSTED_WORLD_KEY:=
+  TFA_BL31_KEY:=
+  TFA_BL32_KEY:=
+  TFA_BL33_KEY:=
+  TFA_ANTI_ROLLBACK_TABLE:=
+  TFA_MBEDTLS_DIR:=
+  TFA_KEY_ALG:=
+  TFA_HASH_ALG:=
+  TFA_E:=
 endef
 
 define Trusted-Firmware-A/mt7622-nor-1ddr
@@ -181,6 +223,24 @@ define Trusted-Firmware-A/mt7981-spim-nand-ddr4
   BUILD_SUBTARGET:=filogic
   PLAT:=mt7981
   DDR_TYPE:=ddr4
+endef
+
+# Dedicated secure-boot variant for Emplus DAM-AP410 only; keeps the shared
+# mt7981-spim-nand-ddr4 variant (used by other MT7981 boards) unaffected.
+define Trusted-Firmware-A/mt7981-dam-ap410-ddr4
+  NAME:=MediaTek MT7981 (Emplus DAM-AP410, secure boot)
+  BOOT_DEVICE:=spim-nand
+  BUILD_SUBTARGET:=filogic
+  PLAT:=mt7981
+  DDR_TYPE:=ddr4
+  TFA_TRUSTED_BOARD_BOOT:=1
+  TFA_GENERATE_COT:=1
+  TFA_ROT_KEY:=$(TOPDIR)/keys/mtk-secure-boot/fip_private_key.pem
+  TFA_BROM_SIGN_KEY:=$(TOPDIR)/keys/mtk-secure-boot/bl2_private_key.pem
+  TFA_TRUSTED_WORLD_KEY:=$(TOPDIR)/keys/mtk-secure-boot/trusted_private_key.pem
+  TFA_NON_TRUSTED_WORLD_KEY:=$(TOPDIR)/keys/mtk-secure-boot/non_trusted_private_key.pem
+  TFA_BL31_KEY:=$(TOPDIR)/keys/mtk-secure-boot/soc_fw_private_key.pem
+  TFA_BL33_KEY:=$(TOPDIR)/keys/mtk-secure-boot/nt_fw_private_key.pem
 endef
 
 define Trusted-Firmware-A/mt7981-nor-ddr3
@@ -703,6 +763,7 @@ TFA_TARGETS:= \
 	mt7981-emmc-ddr4 \
 	mt7981-sdmmc-ddr4 \
 	mt7981-spim-nand-ddr4 \
+	mt7981-dam-ap410-ddr4 \
 	mt7981-cudy-ddr3 \
 	mt7981-cudy-ddr4 \
 	mt7986-ram-ddr3 \
@@ -751,9 +812,39 @@ TFA_TARGETS:= \
 	mt7988-spim-nand-ubi-comb \
 	mt7988-spim-nand-ubi-ddr4
 
+# Optional secure boot knobs passed from top-level make invocation, e.g.:
+# make ... TFA_TRUSTED_BOARD_BOOT=1 TFA_GENERATE_COT=1 TFA_ROT_KEY=/abs/path/rot_key.pem
+TFA_TRUSTED_BOARD_BOOT ?=
+TFA_GENERATE_COT ?=
+TFA_OFFLINE_SIGN ?=
+TFA_ANTI_ROLLBACK ?=
+TFA_ROT_KEY ?=
+TFA_BROM_SIGN_KEY ?=
+TFA_SCP_BL2_KEY ?=
+TFA_TRUSTED_WORLD_KEY ?=
+TFA_NON_TRUSTED_WORLD_KEY ?=
+TFA_BL31_KEY ?=
+TFA_BL32_KEY ?=
+TFA_BL33_KEY ?=
+TFA_ANTI_ROLLBACK_TABLE ?=
+TFA_MBEDTLS_DIR ?=
+TFA_KEY_ALG ?=
+TFA_HASH_ALG ?=
+TFA_E ?=
+
+TFA_DAM_AP410_SECURE_FLAGS = \
+	TRUSTED_BOARD_BOOT=1 GENERATE_COT=1 E=0 \
+	ROT_KEY=$(TOPDIR)/keys/mtk-secure-boot/fip_private_key.pem \
+	BROM_SIGN_KEY=$(TOPDIR)/keys/mtk-secure-boot/bl2_private_key.pem \
+	TRUSTED_WORLD_KEY=$(TOPDIR)/keys/mtk-secure-boot/trusted_private_key.pem \
+	NON_TRUSTED_WORLD_KEY=$(TOPDIR)/keys/mtk-secure-boot/non_trusted_private_key.pem \
+	BL31_KEY=$(TOPDIR)/keys/mtk-secure-boot/soc_fw_private_key.pem \
+	BL33_KEY=$(TOPDIR)/keys/mtk-secure-boot/nt_fw_private_key.pem \
+	MBEDTLS_DIR=$(PKG_BUILD_DIR)/$(MBEDTLS_TFA_NAME)-$(MBEDTLS_TFA_RELEASE)
+
 TFA_MAKE_FLAGS += \
 	BOOT_DEVICE=$(BOOT_DEVICE) \
-	USE_MKIMAGE=1 MKIMAGE=$(STAGING_DIR_HOST)/bin/mkimage \
+	$(if $(filter mt7981-dam-ap410-ddr4,$(BUILD_VARIANT)),,USE_MKIMAGE=1 MKIMAGE=$(STAGING_DIR_HOST)/bin/mkimage) \
 	$(if $(findstring ddr4,$(DDR_TYPE)),DRAM_USE_DDR4=1) \
 	$(if $(BOARD_QFN),BOARD_QFN=1,BOARD_BGA=1) \
 	$(if $(NAND_TYPE),NAND_TYPE=$(NAND_TYPE)) \
@@ -769,7 +860,25 @@ TFA_MAKE_FLAGS += \
 	$(if $(FIP_OFFSET),OVERRIDE_FIP_BASE=$(FIP_OFFSET)) \
 	$(if $(FIP_SIZE),OVERRIDE_FIP_SIZE=$(FIP_SIZE)) \
 	$(if $(SPIM_CTRL),SPIM_CTRL=$(SPIM_CTRL)) \
-	$(if $(RAM_BOOT_UART_DL),bl2,all)
+		$(if $(TFA_TRUSTED_BOARD_BOOT),TRUSTED_BOARD_BOOT=$(TFA_TRUSTED_BOARD_BOOT)) \
+		$(if $(TFA_GENERATE_COT),GENERATE_COT=$(TFA_GENERATE_COT)) \
+		$(if $(TFA_OFFLINE_SIGN),OFFLINE_SIGN=$(TFA_OFFLINE_SIGN)) \
+		$(if $(TFA_ANTI_ROLLBACK),ANTI_ROLLBACK=$(TFA_ANTI_ROLLBACK)) \
+		$(if $(TFA_ROT_KEY),ROT_KEY=$(TFA_ROT_KEY)) \
+		$(if $(TFA_BROM_SIGN_KEY),BROM_SIGN_KEY=$(TFA_BROM_SIGN_KEY)) \
+		$(if $(TFA_SCP_BL2_KEY),SCP_BL2_KEY=$(TFA_SCP_BL2_KEY)) \
+		$(if $(TFA_TRUSTED_WORLD_KEY),TRUSTED_WORLD_KEY=$(TFA_TRUSTED_WORLD_KEY)) \
+		$(if $(TFA_NON_TRUSTED_WORLD_KEY),NON_TRUSTED_WORLD_KEY=$(TFA_NON_TRUSTED_WORLD_KEY)) \
+		$(if $(TFA_BL31_KEY),BL31_KEY=$(TFA_BL31_KEY)) \
+		$(if $(TFA_BL32_KEY),BL32_KEY=$(TFA_BL32_KEY)) \
+		$(if $(TFA_BL33_KEY),BL33_KEY=$(TFA_BL33_KEY)) \
+		$(if $(TFA_ANTI_ROLLBACK_TABLE),ANTI_ROLLBACK_TABLE=$(TFA_ANTI_ROLLBACK_TABLE)) \
+		$(if $(TFA_TRUSTED_BOARD_BOOT),MBEDTLS_DIR=$(if $(TFA_MBEDTLS_DIR),$(TFA_MBEDTLS_DIR),$(PKG_BUILD_DIR)/$(MBEDTLS_TFA_NAME)-$(MBEDTLS_TFA_RELEASE))) \
+		$(if $(TFA_KEY_ALG),KEY_ALG=$(TFA_KEY_ALG)) \
+		$(if $(TFA_HASH_ALG),HASH_ALG=$(TFA_HASH_ALG)) \
+		$(if $(TFA_E),E=$(TFA_E),$(if $(TFA_TRUSTED_BOARD_BOOT),E=0)) \
+		$(if $(filter mt7981-dam-ap410-ddr4,$(BUILD_VARIANT)),$(TFA_DAM_AP410_SECURE_FLAGS)) \
+		$(if $(RAM_BOOT_UART_DL),bl2,all)
 
 define Package/trusted-firmware-a-ram/install
 	$(INSTALL_DIR) $(STAGING_DIR_IMAGE)
@@ -789,6 +898,11 @@ define Package/trusted-firmware-a/install
 	$(INSTALL_DIR) $(STAGING_DIR_IMAGE)
 	$(INSTALL_DATA) $(PKG_BUILD_DIR)/build/$(PLAT)/release/bl2.img $(STAGING_DIR_IMAGE)/$(BUILD_VARIANT)-bl2.img
 	$(INSTALL_DATA) $(PKG_BUILD_DIR)/build/$(PLAT)/release/bl31.bin $(STAGING_DIR_IMAGE)/$(BUILD_VARIANT)-bl31.bin
+endef
+
+define Package/trusted-firmware-a-mt7981-dam-ap410-ddr4/install
+	$(call Package/trusted-firmware-a/install)
+	$(INSTALL_DATA) $(PKG_BUILD_DIR)/build/$(PLAT)/release/bl2.img.signkeyhash $(STAGING_DIR_IMAGE)/$(BUILD_VARIANT)-bl2.img.signkeyhash
 endef
 
 $(eval $(call BuildPackage/Trusted-Firmware-A))
