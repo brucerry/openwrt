@@ -37,6 +37,9 @@ define U-Boot/Default
   BUILD_TARGET:=mediatek
   UBOOT_IMAGE:=u-boot-mtk.bin
   HIDDEN:=1
+  FIT_KEY_DIR:=
+  FIT_KEY_NAME:=
+  FIT_KEY_ALG:=
 endef
 
 define U-Boot/mt7620_rfb
@@ -624,6 +627,34 @@ define U-Boot/mt7981_rfb-spim-nand
   BL2_SOC:=mt7981
   BL2_DDRTYPE:=ddr3
   DEPENDS:=+trusted-firmware-a-mt7981-spim-nand-ddr3
+endef
+
+define U-Boot/mt7981_emplus_dam-ap410
+  NAME:=Emplus DAM-AP410
+  BUILD_SUBTARGET:=filogic
+  BUILD_DEVICES:=emplus_dam-ap410
+  UBOOT_CONFIG:=mt7981_emplus_dam-ap410
+  UBOOT_IMAGE:=u-boot.fip
+  BL2_BOOTDEV:=dam-ap410
+  BL2_SOC:=mt7981
+  BL2_DDRTYPE:=ddr4
+  DEPENDS:=+trusted-firmware-a-mt7981-dam-ap410-ddr4
+  FIT_KEY_DIR:=$(TOPDIR)/keys/mtk-secure-boot
+  FIT_KEY_NAME:=fit_key
+  FIT_KEY_ALG:=sha256,rsa2048
+endef
+
+# Plain/unsigned counterpart: shared non-secure TF-A, no FIT signing.
+define U-Boot/mt7981_emplus_dam-ap410_unsigned
+  NAME:=Emplus DAM-AP410 (unsigned)
+  BUILD_SUBTARGET:=filogic
+  BUILD_DEVICES:=emplus_dam-ap410_unsigned
+  UBOOT_CONFIG:=mt7981_emplus_dam-ap410
+  UBOOT_IMAGE:=u-boot.fip
+  BL2_BOOTDEV:=spim-nand
+  BL2_SOC:=mt7981
+  BL2_DDRTYPE:=ddr4
+  DEPENDS:=+trusted-firmware-a-mt7981-spim-nand-ddr4
 endef
 
 define U-Boot/mt7981_rfb-emmc
@@ -1344,6 +1375,8 @@ UBOOT_TARGETS := \
 	mt7981_openwrt_one-snand \
 	mt7981_openwrt_one-nor \
 	mt7981_rfb-spim-nand \
+	mt7981_emplus_dam-ap410 \
+	mt7981_emplus_dam-ap410_unsigned \
 	mt7981_rfb-emmc \
 	mt7981_rfb-nor \
 	mt7981_rfb-sd \
@@ -1435,8 +1468,51 @@ define Build/Configure
 	sed -i 's/CONFIG_TOOLS_LIBCRYPTO=y/# CONFIG_TOOLS_LIBCRYPTO is not set/' $(PKG_BUILD_DIR)/.config
 endef
 
+
+define Build/fit-embed-key
+	mkdir -p $(PKG_BUILD_DIR)/fit-key-embed
+	echo -n "mtk-secure-boot-fit-key-anchor" > $(PKG_BUILD_DIR)/fit-key-embed/data.bin
+	( \
+		echo '/dts-v1/;'; \
+		echo '/ {'; \
+		echo '	description = "key embed anchor";'; \
+		echo '	images {'; \
+		echo '		data-1 {'; \
+		echo '			description = "anchor";'; \
+		echo '			data = /incbin/("$(PKG_BUILD_DIR)/fit-key-embed/data.bin");'; \
+		echo '			type = "firmware";'; \
+		echo '			arch = "arm64";'; \
+		echo '			compression = "none";'; \
+		echo '			hash-1 { algo = "sha256"; };'; \
+		echo '		};'; \
+		echo '	};'; \
+		echo '	configurations {'; \
+		echo '		default = "conf-1";'; \
+		echo '		conf-1 {'; \
+		echo '			description = "anchor config";'; \
+		echo '			firmware = "data-1";'; \
+		echo '			signature-1 {'; \
+		echo '				algo = "$(FIT_KEY_ALG)";'; \
+		echo '				key-name-hint = "$(FIT_KEY_NAME)";'; \
+		echo '				sign-images = "firmware";'; \
+		echo '			};'; \
+		echo '		};'; \
+		echo '	};'; \
+		echo '};'; \
+	) > $(PKG_BUILD_DIR)/fit-key-embed/anchor.its
+	PATH=$(PKG_BUILD_DIR)/scripts/dtc:$(STAGING_DIR_HOST)/bin:$(PATH) \
+		$(STAGING_DIR_HOST)/bin/mkimage \
+		-f $(PKG_BUILD_DIR)/fit-key-embed/anchor.its \
+		-k $(FIT_KEY_DIR) -K $(PKG_BUILD_DIR)/dts/dt.dtb -r \
+		$(PKG_BUILD_DIR)/fit-key-embed/anchor.itb
+	$(call Build/Compile/U-Boot)
+endef
+
 define Build/Compile
 	$(call Build/Compile/U-Boot)
+ifneq ($(FIT_KEY_DIR),)
+	$(call Build/fit-embed-key)
+endif
 ifeq ($(UBOOT_IMAGE),u-boot.fip)
 	$(call Build/fip-image)
 endif
