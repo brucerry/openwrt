@@ -1,108 +1,110 @@
-![OpenWrt logo](include/logo.png)
+## Emplus DAM-AP410
 
-OpenWrt Project is a Linux operating system targeting embedded devices. Instead
-of trying to create a single, static firmware, OpenWrt provides a fully
-writable filesystem with package management. This frees you from the
-application selection and configuration provided by the vendor and allows you
-to customize the device through the use of packages to suit any application.
-For developers, OpenWrt is the framework to build an application without having
-to build a complete firmware around it; for users this means the ability for
-full customization, to use the device in ways never envisioned.
+This tree carries a custom OpenWrt 25.12 board bring-up for the **Emplus
+DAM-AP410**, an indoor 802.11ax (Wi-Fi 6) access point. It includes MediaTek's
+TF-A/U-Boot secure boot chain and signed FIT images in the normal `make` flow.
 
-Sunshine!
+### Description
 
-## Download
+* Indoor dual-band 802.11ax (Wi-Fi 6) access point.
+* Secure boot chain: BROM -> signed BL2 -> TF-A (BL31) -> FIP -> U-Boot ->
+  signed kernel FIT.
+* `emplus_dam-ap410` produces signed production images;
+  `emplus_dam-ap410_unsigned` produces unsigned development images.
 
-Built firmware images are available for many architectures and come with a
-package selection to be used as WiFi home router. To quickly find a factory
-image usable to migrate from a vendor stock firmware to OpenWrt, try the
-*Firmware Selector*.
+### Major Hardware Components
 
-* [OpenWrt Firmware Selector](https://firmware-selector.openwrt.org/)
+| Component | Description |
+|---|---|
+| SoC | MediaTek MT7981B dual-core Arm Cortex-A53 |
+| Wi-Fi | MT7981B radio with MT7976C companion RF; Wi-Fi 6 dual-band 2.4GHz + 5GHz, 2x2 + 2x2; two external dual-band IPEX antennas, 4dBi |
+| Ethernet switch | MediaTek MT7531AE; 3x 1GbE bridged LAN ports |
+| Flash | SPI-NAND with custom partitions |
+| Memory | DDR4 SDRAM |
+| LEDs | power, status, Wi-Fi 2.4GHz, Wi-Fi 5GHz |
+| Button | reset |
+| Serial console | UART0, 115200 8N1 |
 
-If your device is supported, please follow the **Info** link to see install
-instructions or consult the support resources listed below.
+Default SPI-NAND partition layout:
 
-## 
+| Partition | Offset | Size |
+|---|---:|---:|
+| bl2 | 0x0000000 | 1 MiB |
+| u-boot-env | 0x0100000 | 512 KiB |
+| factory | 0x0180000 | 2 MiB |
+| fip | 0x0380000 | 2 MiB |
+| ubi | 0x0580000 | 96 MiB |
+| userconfig | 0x6580000 | 9.25 MiB |
+| storage | 0x6EC0000 | 9.25 MiB |
 
-An advanced user may require additional or specific package. (Toolchain, SDK, ...) For everything else than simple firmware download, try the wiki download page:
+### 🏗️ Building Signed and Unsigned Images
 
-* [OpenWrt Wiki Download](https://openwrt.org/downloads)
+Generate the secure-boot keys once per checkout. The script is idempotent:
 
-## Development
-
-To build your own firmware you need a GNU/Linux, BSD or macOS system (case
-sensitive filesystem required). Cygwin is unsupported because of the lack of a
-case sensitive file system.
-
-### Requirements
-
-You need the following tools to compile OpenWrt, the package names vary between
-distributions. A complete list with distribution specific packages is found in
-the [Build System Setup](https://openwrt.org/docs/guide-developer/build-system/install-buildsystem)
-documentation.
-
-```
-binutils bzip2 diff find flex gawk gcc-6+ getopt grep install libc-dev libz-dev
-make4.1+ perl python3.7+ rsync subversion unzip which
+```sh
+./scripts/gen-mtk-secureboot-keys.sh
 ```
 
-### Quickstart
+**Signed production image:** select `Emplus DAM-AP410` in `make menuconfig`,
+then build:
 
-1. Run `./scripts/feeds update -a` to obtain all the latest package definitions
-   defined in feeds.conf / feeds.conf.default
+```sh
+make V=s -j1
+```
 
-2. Run `./scripts/feeds install -a` to install symlinks for all obtained
-   packages into package/feeds/
+**Unsigned development image:** select `Emplus DAM-AP410 (unsigned)` in
+`make menuconfig`, then build:
 
-3. Run `make menuconfig` to select your preferred configuration for the
-   toolchain, target system & firmware packages.
+```sh
+make V=s -j1
+```
 
-4. Run `make` to build your firmware. This will download all sources, build the
-   cross-compile toolchain and then cross-compile the GNU/Linux kernel & all chosen
-   applications for your target system.
+Signed production outputs are written to `bin/targets/mediatek/filogic/`:
 
-### Related Repositories
+* `openwrt-mediatek-filogic-emplus_dam-ap410-signed-squashfs-sysupgrade.itb`
+* `openwrt-mediatek-filogic-emplus_dam-ap410-signed-spim-nand-preloader.bin`
+* `openwrt-mediatek-filogic-emplus_dam-ap410-signed-spim-nand-bl31-uboot.fip`
+* `openwrt-mediatek-filogic-emplus_dam-ap410-signed-bl2.img.signkeyhash`
 
-The main repository uses multiple sub-repositories to manage packages of
-different categories. All packages are installed via the OpenWrt package
-manager called `opkg`. If you're looking to develop the web interface or port
-packages to OpenWrt, please find the fitting repository below.
+Unsigned development outputs retain the
+`openwrt-mediatek-filogic-emplus_dam-ap410_unsigned-*` prefix.
 
-* [LuCI Web Interface](https://github.com/openwrt/luci): Modern and modular
-  interface to control the device via a web browser.
+### 🔐 MT7981 Secure-Boot Provisioning
 
-* [OpenWrt Packages](https://github.com/openwrt/packages): Community repository
-  of ported packages.
+⚠️ **Warning:** eFuses are one-time programmable. A wrong public-key hash or
+premature secure-boot enable permanently prevents the device from booting the
+intended firmware. Never copy a private key to the device and never use
+unsigned images after secure boot is enabled.
 
-* [OpenWrt Routing](https://github.com/openwrt/routing): Packages specifically
-  focused on (mesh) routing.
+The signed build creates `bl2.img.signkeyhash`, the 32-byte public-key-hash
+payload generated by MediaTek's `bromimage` tool from
+`keys/mtk-secure-boot/bl2_private_key.pem`. This payload, not the PEM key, is
+fused into the MT7981 SoC.
 
-* [OpenWrt Video](https://github.com/openwrt/video): Packages specifically
-  focused on display servers and clients (Xorg and Wayland).
+Use a controlled manufacturing image with `kmod-mtk-efuse-nl-drv` and
+`mtk-efuse-nl-tool-mt7981` installed. Copy the signed `*.signkeyhash` artifact
+to `/tmp/bl2.img.signkeyhash` on an unfused device, then run as root:
 
-## Support Information
+```sh
+# Verify that BootROM public-key-hash slot 0 is empty.
+mtk-efuse-tool-mt7981 ph r 0
 
-For a list of supported devices see the [OpenWrt Hardware Database](https://openwrt.org/supported_devices)
+# Program the signed BL2 public-key hash and read it back.
+mtk-efuse-tool-mt7981 ph w 0 /tmp/bl2.img.signkeyhash
+mtk-efuse-tool-mt7981 ph r 0
 
-### Documentation
+# Compare this source file against the bytes returned by the previous command.
+hexdump -Cv /tmp/bl2.img.signkeyhash
 
-* [Quick Start Guide](https://openwrt.org/docs/guide-quick-start/start)
-* [User Guide](https://openwrt.org/docs/guide-user/start)
-* [Developer Documentation](https://openwrt.org/docs/guide-developer/start)
-* [Technical Reference](https://openwrt.org/docs/techref/start)
+# Permanently lock slot 0, then verify the lock state.
+mtk-efuse-tool-mt7981 lh w 0
+mtk-efuse-tool-mt7981 lh r 0
 
-### Support Community
+# Final irreversible step: require BootROM to verify BL2 at every boot.
+mtk-efuse-tool-mt7981 es w
+mtk-efuse-tool-mt7981 es r
+```
 
-* [Forum](https://forum.openwrt.org): For usage, projects, discussions and hardware advise.
-* [Support Chat](https://webchat.oftc.net/#openwrt): Channel `#openwrt` on **oftc.net**.
-
-### Developer Community
-
-* [Bug Reports](https://bugs.openwrt.org): Report bugs in OpenWrt
-* [Dev Mailing List](https://lists.openwrt.org/mailman/listinfo/openwrt-devel): Send patches
-* [Dev Chat](https://webchat.oftc.net/#openwrt-devel): Channel `#openwrt-devel` on **oftc.net**.
-
-## License
-
-OpenWrt is licensed under GPL-2.0
+⚠️ Do not run `db w` (disable BROM command interface), `dj w` (disable JTAG), or
+`ea w` (enable anti-rollback) until the production flow has been separately
+validated. `db w` permanently disables eFuse writes as well.
