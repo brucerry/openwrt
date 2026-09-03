@@ -21,6 +21,11 @@
 		stdout-path = "serial0:115200n8";
 	};
 
+	memory@40000000 {
+		device_type = "memory";
+		reg = <0 0x40000000 0 0x20000000>;
+	};
+
 	/* debugfs gpio: gpio-456 reset, offset 1 on pio, input active low */
 	gpio-keys {
 		compatible = "gpio-keys";
@@ -40,6 +45,7 @@
 			function = LED_FUNCTION_STATUS;
 			color = <LED_COLOR_ID_GREEN>;
 			gpios = <&pio 9 GPIO_ACTIVE_LOW>;
+			default-state = "off";
 		};
 
 		led-power {
@@ -54,6 +60,7 @@
 			color = <LED_COLOR_ID_BLUE>;
 			gpios = <&pio 11 GPIO_ACTIVE_LOW>;
 			linux,default-trigger = "phy1tpt";
+			default-state = "on";
 		};
 
 		led-wifi2g {
@@ -61,6 +68,7 @@
 			color = <LED_COLOR_ID_BLUE>;
 			gpios = <&pio 12 GPIO_ACTIVE_LOW>;
 			linux,default-trigger = "phy0tpt";
+			default-state = "on";
 		};
 	};
 };
@@ -106,6 +114,9 @@
 		spi-max-frequency = <52000000>;
 		spi-tx-bus-width = <4>;
 		spi-rx-bus-width = <4>;
+		mediatek,nmbm;
+		mediatek,bmt-max-ratio = <1>;
+		mediatek,bmt-max-reserved-blocks = <64>;
 
 		partitions {
 			compatible = "fixed-partitions";
@@ -113,7 +124,7 @@
 			#size-cells = <1>;
 
 			partition@0 {
-				label = "bl2";
+				label = "BL2";
 				reg = <0x0 0x100000>;
 				read-only;
 			};
@@ -124,7 +135,7 @@
 			};
 
 			factory: partition@180000 {
-				label = "factory";
+				label = "Factory";
 				reg = <0x180000 0x200000>;
 				read-only;
 
@@ -144,7 +155,7 @@
 			};
 
 			partition@380000 {
-				label = "fip";
+				label = "FIP";
 				reg = <0x380000 0x200000>;
 				read-only;
 			};
@@ -155,12 +166,12 @@
 			};
 
 			partition@6580000 {
-				label = "userconfig";
+				label = "userfs";
 				reg = <0x6580000 0x940000>;
 			};
 
 			partition@6ec0000 {
-				label = "storage";
+				label = "Storage";
 				reg = <0x6ec0000 0x940000>;
 			};
 		};
@@ -207,18 +218,18 @@
 		#address-cells = <1>;
 		#size-cells = <0>;
 
+		port@0 {
+			reg = <0>;
+			label = "lan1";
+		};
+
 		port@1 {
 			reg = <1>;
-			label = "lan1";
+			label = "lan2";
 		};
 
 		port@2 {
 			reg = <2>;
-			label = "lan2";
-		};
-
-		port@3 {
-			reg = <3>;
 			label = "lan3";
 		};
 
