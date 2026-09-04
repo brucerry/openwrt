@@ -37,6 +37,7 @@ define U-Boot/Default
   BUILD_TARGET:=mediatek
   UBOOT_IMAGE:=u-boot-mtk.bin
   HIDDEN:=1
+  TFA_TBB:=
   FIT_KEY_DIR:=
   FIT_KEY_NAME:=
   FIT_KEY_ALG:=
@@ -639,6 +640,7 @@ define U-Boot/mt7981_emplus_dam-ap410
   BL2_SOC:=mt7981
   BL2_DDRTYPE:=ddr4
   DEPENDS:=+trusted-firmware-a-mt7981-dam-ap410-ddr4
+  TFA_TBB:=1
   FIT_KEY_DIR:=$(TOPDIR)/keys/mtk-secure-boot
   FIT_KEY_NAME:=fit_key
   FIT_KEY_ALG:=sha256,rsa2048
@@ -1441,15 +1443,45 @@ ifdef CONFIG_TARGET_mediatek
 UBOOT_MAKE_FLAGS += $(UBOOT_IMAGE:.fip=.bin)
 endif
 
+TFA_DAM_AP410_DIR = $(firstword $(wildcard $(BUILD_DIR)/arm-trusted-firmware-mediatek-mt7981-dam-ap410-ddr4/arm-trusted-firmware-mediatek-* ))
+TFA_DAM_AP410_RELEASE = $(TFA_DAM_AP410_DIR)/build/mt7981/release
+
 define Build/fip-image
 	$(if $(FIP_COMPRESS),\
-		xz -f -e -k -9 -C crc32 $(STAGING_DIR_IMAGE)/$(if $(BL2_SOC),$(BL2_SOC),$(BUILD_SUBTARGET))-$(BL2_BOOTDEV)-$(if $(BL2_DDRTYPE),$(BL2_DDRTYPE)-)$(if $(BL2_DDRBLOB),$(BL2_DDRBLOB)ddr-)bl31.bin ;\
-		xz -f -e -k -9 -C crc32 $(PKG_BUILD_DIR)/u-boot.bin \
-	)
-	$(STAGING_DIR_HOST)/bin/fiptool create \
-		--soc-fw $(STAGING_DIR_IMAGE)/$(if $(BL2_SOC),$(BL2_SOC),$(BUILD_SUBTARGET))-$(BL2_BOOTDEV)-$(if $(BL2_DDRTYPE),$(BL2_DDRTYPE)-)$(if $(BL2_DDRBLOB),$(BL2_DDRBLOB)ddr-)bl31.bin$(if $(FIP_COMPRESS),.xz) \
-		--nt-fw $(PKG_BUILD_DIR)/u-boot.bin$(if $(FIP_COMPRESS),.xz) \
-		$(PKG_BUILD_DIR)/u-boot.fip
+	  xz -f -e -k -9 -C crc32 $(STAGING_DIR_IMAGE)/$(if $(BL2_SOC),$(BL2_SOC),$(BUILD_SUBTARGET))-$(BL2_BOOTDEV)-$(if $(BL2_DDRTYPE),$(BL2_DDRTYPE)-)$(if $(BL2_DDRBLOB),$(BL2_DDRBLOB)ddr-)bl31.bin && \
+	  xz -f -e -k -9 -C crc32 $(PKG_BUILD_DIR)/u-boot.bin && \
+	) $(STAGING_DIR_HOST)/bin/fiptool create \
+	  --soc-fw $(STAGING_DIR_IMAGE)/$(if $(BL2_SOC),$(BL2_SOC),$(BUILD_SUBTARGET))-$(BL2_BOOTDEV)-$(if $(BL2_DDRTYPE),$(BL2_DDRTYPE)-)$(if $(BL2_DDRBLOB),$(BL2_DDRBLOB)ddr-)bl31.bin$(if $(FIP_COMPRESS),.xz) \
+	  --nt-fw $(PKG_BUILD_DIR)/u-boot.bin$(if $(FIP_COMPRESS),.xz) \
+	  $(PKG_BUILD_DIR)/u-boot.fip
+endef
+
+define Build/tbb-fip-image
+  test -n "$(TFA_DAM_AP410_DIR)" && \
+  rm -f $(TFA_DAM_AP410_RELEASE)/fip.bin \
+    $(TFA_DAM_AP410_RELEASE)/trusted_key.crt \
+    $(TFA_DAM_AP410_RELEASE)/soc_fw_key.crt \
+    $(TFA_DAM_AP410_RELEASE)/soc_fw_content.crt \
+    $(TFA_DAM_AP410_RELEASE)/nt_fw_key.crt \
+    $(TFA_DAM_AP410_RELEASE)/nt_fw_content.crt && \
+  $(MAKE) -C $(TFA_DAM_AP410_DIR) \
+    PLAT=mt7981 BUILD_BASE=$(TFA_DAM_AP410_DIR)/build DEBUG=0 \
+    TRUSTED_BOARD_BOOT=1 GENERATE_COT=1 E=0 \
+    MBEDTLS_DIR=$(TFA_DAM_AP410_DIR)/mbedtls-tfa-3.6.7 \
+    ROT_KEY=$(TOPDIR)/keys/mtk-secure-boot/fip_private_key.pem \
+    TRUSTED_WORLD_KEY=$(TOPDIR)/keys/mtk-secure-boot/trusted_private_key.pem \
+    NON_TRUSTED_WORLD_KEY=$(TOPDIR)/keys/mtk-secure-boot/non_trusted_private_key.pem \
+    BL31_KEY=$(TOPDIR)/keys/mtk-secure-boot/soc_fw_private_key.pem \
+    BL33_KEY=$(TOPDIR)/keys/mtk-secure-boot/nt_fw_private_key.pem \
+    BL31=$(TFA_DAM_AP410_RELEASE)/bl31.bin \
+    BL33=$(PKG_BUILD_DIR)/u-boot.bin fip && \
+  $(STAGING_DIR_HOST)/bin/fiptool info $(TFA_DAM_AP410_RELEASE)/fip.bin > $(PKG_BUILD_DIR)/fip.info && \
+  grep -q '^Trusted key certificate:' $(PKG_BUILD_DIR)/fip.info && \
+  grep -q '^SoC Firmware key certificate:' $(PKG_BUILD_DIR)/fip.info && \
+  grep -q '^SoC Firmware content certificate:' $(PKG_BUILD_DIR)/fip.info && \
+  grep -q '^Non-Trusted Firmware key certificate:' $(PKG_BUILD_DIR)/fip.info && \
+  grep -q '^Non-Trusted Firmware content certificate:' $(PKG_BUILD_DIR)/fip.info && \
+  $(CP) $(TFA_DAM_AP410_RELEASE)/fip.bin $(PKG_BUILD_DIR)/u-boot.fip
 endef
 
 ifdef CONFIG_TARGET_ramips_mt7621
@@ -1514,7 +1546,11 @@ ifneq ($(FIT_KEY_DIR),)
 	$(call Build/fit-embed-key)
 endif
 ifeq ($(UBOOT_IMAGE),u-boot.fip)
+ifeq ($(TFA_TBB),1)
+	$(call Build/tbb-fip-image)
+else
 	$(call Build/fip-image)
+endif
 endif
 endef
 

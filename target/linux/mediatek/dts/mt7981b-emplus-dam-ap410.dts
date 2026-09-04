@@ -18,6 +18,7 @@
 	};
 
 	chosen {
+		rootdisk = <&ubi_rootdisk>;
 		stdout-path = "serial0:115200n8";
 	};
 
@@ -161,8 +162,15 @@
 			};
 
 			partition@580000 {
+				compatible = "linux,ubi";
 				label = "ubi";
 				reg = <0x580000 0x6000000>;
+
+				volumes {
+					ubi_rootdisk: ubi-volume-kernel {
+						volname = "kernel";
+					};
+				};
 			};
 
 			partition@6580000 {
