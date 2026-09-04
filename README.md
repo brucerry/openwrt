@@ -30,8 +30,6 @@ Generate keys once per checkout, select the required profile, and build:
 
 ```sh
 ./scripts/gen-mtk-secureboot-keys.sh
-make menuconfig
-make defconfig
 make V=s -j1
 ```
 
@@ -51,6 +49,133 @@ staging_dir/host/bin/fiptool info \
 The FIP must include BL31, BL33, and the trusted, SoC-firmware, and non-trusted
 firmware key/content certificates. Never publish the private keys. The
 `*.signkeyhash` output is a comparison/provisioning artifact, not a NAND image.
+
+### Verify the running trust chain
+
+Before enabling BootROM secure boot, verify that every signed stage is already
+installed and enforced above BL2. First inspect the build artifacts:
+
+```sh
+OUT=bin/targets/mediatek/filogic
+PREFIX=openwrt-mediatek-filogic-emplus_dam-ap410-signed
+
+test "$(stat -c %s "$OUT/$PREFIX-bl2.img.signkeyhash")" -eq 32
+staging_dir/host/bin/fiptool info \
+  "$OUT/$PREFIX-spim-nand-bl31-uboot.fip"
+```
+
+The FIP inspection must list BL31, BL33, and all five trusted, SoC-firmware, and
+non-trusted-firmware key/content certificates.
+
+At U-Boot, compare the installed bootloader partitions with the exact current
+build files served by TFTP. These are read-only flash checks:
+
+```text
+run load_fip
+run calc_write_size
+mtd read FIP ${verifyaddr} 0 ${write_size}
+cmp.b ${loadaddr} ${verifyaddr} ${write_size}
+
+run load_bl2
+run calc_write_size
+mtd read BL2 ${verifyaddr} 0 ${write_size}
+cmp.b ${loadaddr} ${verifyaddr} ${write_size}
+```
+
+Both comparisons must report no differences. Cold-boot with a serial log and
+require all of the following:
+
+```text
+BL2: ... OpenWrt ...
+Verifying BL Anti-Rollback Version ... OK
+BL2: Booting BL31
+BL31: ... OpenWrt ...
+U-Boot ... OpenWrt ...
+Verifying Hash Integrity ... sha256,rsa2048:fit_key+ OK
+```
+
+With `TRUSTED_BOARD_BOOT=1`, BL2 stops before BL31 if FIP certificate or payload
+authentication fails. Reaching the matching BL31/U-Boot with no authentication
+error therefore proves the BL2-to-FIP link. The RSA message proves the
+U-Boot-to-FIT link. Before eFuse provisioning, the signed BL2 is present but its
+signature is not yet enforced by BootROM; that is the only open link.
+
+### Enable BootROM secure boot
+
+**Warning:** The commands in this section irreversibly program one-time eFuses.
+A wrong hash, wrong slot, interrupted write, or unbootable BL2 can permanently
+brick the device. Keep a verified raw NAND/OOB backup and external programmer,
+use stable power, and perform this only after the checks above and repeated cold
+boots pass. Never use a hash from another build or key set.
+
+On the build host, identify the exact 32-byte BootROM hash payload and record its
+checksum and bytes:
+
+```sh
+OUT=bin/targets/mediatek/filogic
+HASH="$OUT/openwrt-mediatek-filogic-emplus_dam-ap410-signed-bl2.img.signkeyhash"
+test "$(stat -c %s "$HASH")" -eq 32
+sha256sum "$HASH"
+hexdump -Cv "$HASH"
+```
+
+Place that exact file in the TFTP root. Fetch it on the running device and
+verify its size and SHA-256 against the host output:
+
+```sh
+cd /tmp
+tftp -g \
+  -r openwrt-mediatek-filogic-emplus_dam-ap410-signed-bl2.img.signkeyhash \
+  -l bl2.img.signkeyhash 192.168.1.10
+test "$(stat -c %s /tmp/bl2.img.signkeyhash)" -eq 32
+sha256sum /tmp/bl2.img.signkeyhash
+hexdump -Cv /tmp/bl2.img.signkeyhash
+```
+
+Read all relevant fields before writing. This example provisions slot 0; stop
+unless secure boot and lock 0 are `unblown`, and public-hash slot 0 contains 32
+zero bytes. Do not continue on an inconsistent status or command error.
+
+```sh
+mtk-efuse-tool-mt7981 es r
+mtk-efuse-tool-mt7981 ph r 0
+mtk-efuse-tool-mt7981 lh r 0
+mtk-efuse-tool-mt7981 ph r 1
+mtk-efuse-tool-mt7981 lh r 1
+```
+
+Program only the public-key hash, then read it back:
+
+```sh
+mtk-efuse-tool-mt7981 ph w 0 /tmp/bl2.img.signkeyhash
+mtk-efuse-tool-mt7981 ph r 0
+```
+
+The 32 displayed bytes must exactly match `hexdump -Cv` above. Stop if any byte
+differs. Because secure boot is still disabled, cold-boot once now and repeat
+the complete trust-chain verification before locking the slot.
+
+After that cold boot passes, permanently lock hash slot 0 and verify it:
+
+```sh
+mtk-efuse-tool-mt7981 lh w 0
+mtk-efuse-tool-mt7981 lh r 0
+mtk-efuse-tool-mt7981 ph r 0
+```
+
+Require `lh: blown` and the same 32 hash bytes. Cold-boot and verify the complete
+chain again. Only then perform the final irreversible step that makes BootROM
+enforce the BL2 signature:
+
+```sh
+mtk-efuse-tool-mt7981 es w
+mtk-efuse-tool-mt7981 es r
+```
+
+Require `es: blown`, then power the device fully off and cold-boot while
+capturing serial output. The complete chain above must still pass. Do not
+program `db`, `dj`, `ea`, `ed`, or the unused public-hash slot as part of this
+procedure.
 
 ### Complete signing-key rotation
 
