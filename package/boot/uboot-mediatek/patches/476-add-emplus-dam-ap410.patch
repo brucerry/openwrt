@@ -1,6 +1,6 @@
 --- /dev/null	2026-08-25 16:36:40.918307901 +0800
 +++ b/configs/mt7981_emplus_dam-ap410_defconfig	2026-08-25 18:12:03.129955994 +0800
-@@ -0,0 +1,70 @@
+@@ -0,0 +1,79 @@
 +CONFIG_ARM=y
 +CONFIG_SYS_HAS_NONCACHED_MEMORY=y
 +CONFIG_POSITION_INDEPENDENT=y
@@ -14,13 +14,19 @@
 +CONFIG_DEBUG_UART_BASE=0x11002000
 +CONFIG_DEBUG_UART_CLOCK=40000000
 +CONFIG_DEBUG_UART=y
-+# CONFIG_AUTOBOOT is not set
++CONFIG_FIT=y
++CONFIG_SPI_BOOT=y
++CONFIG_USE_BOOTARGS=y
++CONFIG_BOOTARGS="ubi.block=0,kernel root=/dev/fit0 rootwait"
++CONFIG_USE_BOOTCOMMAND=y
++CONFIG_BOOTCOMMAND="ubi part ubi && ubi read 0x46000000 kernel && bootm 0x46000000"
 +CONFIG_DEFAULT_FDT_FILE="mt7981-emplus-dam-ap410"
 +CONFIG_SYS_CBSIZE=512
 +CONFIG_SYS_PBSIZE=1049
 +CONFIG_LOGLEVEL=7
 +CONFIG_LOG=y
 +# CONFIG_BOARD_INIT is not set
++CONFIG_HUSH_PARSER=y
 +CONFIG_SYS_PROMPT="MT7981> "
 +# CONFIG_BOOTM_NETBSD is not set
 +# CONFIG_BOOTM_PLAN9 is not set
@@ -34,6 +40,9 @@
 +CONFIG_CMD_SF_TEST=y
 +CONFIG_CMD_PING=y
 +CONFIG_CMD_SMC=y
++CONFIG_CMD_UBI=y
++CONFIG_ENV_USE_DEFAULT_ENV_TEXT_FILE=y
++CONFIG_ENV_DEFAULT_ENV_TEXT_FILE="defenvs/emplus_dam-ap410_env"
 +CONFIG_ENV_VARS_UBOOT_RUNTIME_CONFIG=y
 +CONFIG_NET_RANDOM_ETHADDR=y
 +CONFIG_REGMAP=y
@@ -71,9 +80,34 @@
 +CONFIG_FIT_SIGNATURE=y
 +CONFIG_RSA=y
 +CONFIG_RSA_VERIFY=y
+--- /dev/null
++++ b/defenvs/emplus_dam-ap410_env
+@@ -0,0 +1,22 @@
++baudrate=115200
++bootargs=ubi.block=0,kernel root=/dev/fit0 rootwait
++bootcmd=ubi part ubi && ubi read ${loadaddr} kernel && bootm ${loadaddr}
++bootdelay=2
++ipaddr=192.168.1.1
++serverip=192.168.1.10
++netmask=255.255.255.0
++loadaddr=0x46000000
++verifyaddr=0x47000000
++recoveryfile=openwrt-mediatek-filogic-emplus_dam-ap410-signed-initramfs-recovery.itb
++bl2file=openwrt-mediatek-filogic-emplus_dam-ap410-signed-spim-nand-preloader.bin
++fipfile=openwrt-mediatek-filogic-emplus_dam-ap410-signed-spim-nand-bl31-uboot.fip
++kernelfile=openwrt-mediatek-filogic-emplus_dam-ap410-signed-squashfs-sysupgrade.itb
++boot_recovery=tftpboot ${loadaddr} ${recoveryfile} && bootm ${loadaddr}
++load_bl2=mw.b ${loadaddr} 0xff 0x100000 && tftpboot ${loadaddr} ${bl2file}
++load_fip=mw.b ${loadaddr} 0xff 0x200000 && tftpboot ${loadaddr} ${fipfile}
++load_kernel=tftpboot ${loadaddr} ${kernelfile}
++calc_write_size=setexpr write_size ${filesize} + 0x7ff && setexpr write_size ${write_size} / 0x800 && setexpr write_size ${write_size} * 0x800
++write_bl2=run calc_write_size && mtd erase BL2 && mtd write BL2 ${loadaddr} 0 ${write_size}
++verify_bl2=mtd read BL2 ${verifyaddr} 0 ${write_size} && cmp.b ${loadaddr} ${verifyaddr} ${write_size}
++write_fip=run calc_write_size && mtd erase FIP && mtd write FIP ${loadaddr} 0 ${write_size}
++verify_fip=mtd read FIP ${verifyaddr} 0 ${write_size} && cmp.b ${loadaddr} ${verifyaddr} ${write_size}
 --- /dev/null	2026-08-25 16:36:40.918307901 +0800
 +++ b/arch/arm/dts/mt7981-emplus-dam-ap410.dts	2026-08-25 18:12:03.202166246 +0800
-@@ -0,0 +1,140 @@
+@@ -0,0 +1,181 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/*
 + * Copyright (c) 2022 MediaTek Inc.
@@ -113,12 +147,12 @@
 +&eth {
 +	status = "okay";
 +	mediatek,gmac-id = <0>;
-+	phy-mode = "sgmii";
++	phy-mode = "2500base-x";
 +	mediatek,switch = "mt7531";
 +	reset-gpios = <&pio 39 GPIO_ACTIVE_HIGH>;
 +
 +	fixed-link {
-+		speed = <1000>;
++		speed = <2500>;
 +		full-duplex;
 +	};
 +};
@@ -202,6 +236,47 @@
 +		spi-max-frequency = <52000000>;
 +		spi-rx-bus-width = <4>;
 +		spi-tx-bus-width = <4>;
++
++		partitions {
++			compatible = "fixed-partitions";
++			#address-cells = <1>;
++			#size-cells = <1>;
++
++			partition@0 {
++				label = "BL2";
++				reg = <0x0 0x100000>;
++			};
++
++			partition@100000 {
++				label = "u-boot-env";
++				reg = <0x100000 0x80000>;
++			};
++
++			partition@180000 {
++				label = "Factory";
++				reg = <0x180000 0x200000>;
++			};
++
++			partition@380000 {
++				label = "FIP";
++				reg = <0x380000 0x200000>;
++			};
++
++			partition@580000 {
++				label = "ubi";
++				reg = <0x580000 0x6000000>;
++			};
++
++			partition@6580000 {
++				label = "userfs";
++				reg = <0x6580000 0x940000>;
++			};
++
++			partition@6ec0000 {
++				label = "Storage";
++				reg = <0x6ec0000 0x940000>;
++			};
++		};
 +	};
 +};
 +
