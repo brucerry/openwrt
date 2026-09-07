@@ -7,6 +7,7 @@ ubootenv=""
 ubinize_param=""
 kernel=""
 rootfs=""
+rootfs_data=""
 outfile=""
 err=""
 ubinize_seq=""
@@ -79,6 +80,11 @@ ubilayout() {
 		vol_id=$(( vol_id + 1 ))
 	fi
 
+	if [ "$rootfs_data" ]; then
+		ubivol $vol_id rootfs_data "" 1
+		vol_id=$(( vol_id + 1 ))
+	fi
+
 	if [ "$2" ]; then
 		case "$rootfs_type" in
 		"ubifs")
@@ -122,6 +128,11 @@ while [ "$1" ]; do
 		shift
 		continue
 		;;
+	"--rootfs-data")
+		rootfs_data="rootfs_data"
+		shift
+		continue
+		;;
 	"--part")
 		parts="$parts $2"
 		shift
@@ -143,7 +154,7 @@ while [ "$1" ]; do
 done
 
 if [ ! -r "$rootfs" ] && [ ! -r "$kernel" ] && [ ! "$parts" ] && [ ! "$outfile" ]; then
-	echo "syntax: $0 [--uboot-env] [--part <name>=<file>] [--kernel kernelimage] [--rootfs rootfsimage] out [ubinize opts]"
+	echo "syntax: $0 [--uboot-env] [--part <name>=<file>] [--kernel kernelimage] [--rootfs-data] [--rootfs rootfsimage] out [ubinize opts]"
 	exit 1
 fi
 
