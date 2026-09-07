@@ -20,7 +20,7 @@ The signed profile builds this trust chain:
 BootROM -> signed BL2 -> authenticated FIP/BL31/U-Boot -> RSA-signed FIT
 ```
 
-`emplus_dam-ap410` is the signed production profile.
+`emplus_dam-ap410` is the signed production profile.\
 `emplus_dam-ap410_unsigned` is for development on devices that do not enforce
 secure boot.
 
@@ -102,6 +102,10 @@ signature is not yet enforced by BootROM; that is the only open link.
 
 ### Enable BootROM secure boot
 
+**Hardware adjustment:**
+> MT7981 `DVDD18_VQPS` pin **MUST** be tied to `1.8VD`. By default it was tied to `GND`.\
+> Otherwise, the later `ph w 0` command would fail.
+
 **Warning:** The commands in this section irreversibly program one-time eFuses.
 A wrong hash, wrong slot, interrupted write, or unbootable BL2 can permanently
 brick the device. Keep a verified raw NAND/OOB backup and external programmer,
@@ -137,11 +141,11 @@ unless secure boot and lock 0 are `unblown`, and public-hash slot 0 contains 32
 zero bytes. Do not continue on an inconsistent status or command error.
 
 ```sh
-mtk-efuse-tool-mt7981 es r
-mtk-efuse-tool-mt7981 ph r 0
-mtk-efuse-tool-mt7981 lh r 0
-mtk-efuse-tool-mt7981 ph r 1
-mtk-efuse-tool-mt7981 lh r 1
+mtk-efuse-tool-mt7981 es r       # READ "enable bootrom secure boot chain"
+mtk-efuse-tool-mt7981 ph r 0     # READ "public key hash from slot 0"
+mtk-efuse-tool-mt7981 lh r 0     # READ "lock public key hash from slot 0"
+mtk-efuse-tool-mt7981 ph r 1     # READ "public key hash from slot 1"
+mtk-efuse-tool-mt7981 lh r 1     # READ "lock public key hash from slot 1"
 ```
 
 Program only the public-key hash, then read it back:
@@ -176,6 +180,47 @@ Require `es: blown`, then power the device fully off and cold-boot while
 capturing serial output. The complete chain above must still pass. Do not
 program `db`, `dj`, `ea`, `ed`, or the unused public-hash slot as part of this
 procedure.
+
+Normal BootROM:
+> V0: 0000\
+> 00: 0000
+```text
+F0: 102B 0000
+FA: 1040 0000
+FA: 1040 0000 [0200]
+F9: 0000 0000
+V0: 0000 0000 [0001]
+00: 0000 0000
+BP: 2400 0041 [0000]
+G0: 1190 0000
+EC: 0000 0000 [1000]
+T0: 0000 028A [010F]
+Jump to BL
+```
+
+Fused BootROM with unsigned BL2:
+> V0: 100C, INVALID_SIG_TYPE\
+> 00: 1017, BL_VERIFY_FAILED
+```text
+F0: 102B 0000
+FA: 1040 0000
+FA: 1040 0000 [0200]
+F9: 0000 0000
+V0: 100C 0000 [0001]
+00: 1017 0000
+F9: 0000 0000
+V0: 100C 0000 [0001]
+01: 102A 0001
+02: 1017 0000
+BP: 2000 02C0 [0001]
+EC: 0000 0000 [1000]
+T0: 0000 023C [000F]
+System halt!
+```
+
+Fused BootROM with signed BL2 but wrong key:
+> V0: 706D, KEY_MISMATCH\
+> 00: 1017, BL_VERIFY_FAILED
 
 ### Complete signing-key rotation
 
