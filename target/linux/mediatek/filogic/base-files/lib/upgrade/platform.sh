@@ -198,6 +198,7 @@ platform_do_upgrade() {
 	cudy,wr3000h-v1|\
 	cudy,wr3000p-v1|\
 	emplus,dam-ap410|\
+	emplus,ehr330|\
 	huasifei,wh3000-pro-nand|\
 	huasifei,wh3000r-nand|\
 	jiorouter,ax6000-jidu6101)
