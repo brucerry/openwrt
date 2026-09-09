@@ -1,0 +1,289 @@
+--- /dev/null
++++ b/configs/mt7987a_emplus_ehr330_defconfig
+@@ -0,0 +1,88 @@
++CONFIG_ARM=y
++CONFIG_SYS_HAS_NONCACHED_MEMORY=y
++CONFIG_POSITION_INDEPENDENT=y
++CONFIG_ARCH_MEDIATEK=y
++CONFIG_TEXT_BASE=0x41e00000
++CONFIG_SYS_MALLOC_F_LEN=0x4000
++CONFIG_NR_DRAM_BANKS=1
++CONFIG_DEFAULT_DEVICE_TREE="mt7987a-emplus-ehr330"
++CONFIG_TARGET_MT7987=y
++CONFIG_CPU_ARMV8=y
++CONFIG_SYS_BOOTM_LEN=0x6000000
++CONFIG_SYS_LOAD_ADDR=0x48000000
++CONFIG_PRE_CON_BUF_ADDR=0x4007ef00
++CONFIG_DEBUG_UART_BASE=0x11000000
++CONFIG_DEBUG_UART_CLOCK=40000000
++CONFIG_DEBUG_UART=y
++CONFIG_FIT=y
++CONFIG_FIT_SIGNATURE=y
++CONFIG_RSA=y
++CONFIG_RSA_VERIFY=y
++CONFIG_USE_BOOTCOMMAND=y
++CONFIG_BOOTCOMMAND="ubi part ubi && ubi read ${loadaddr} kernel && bootm ${loadaddr}"
++CONFIG_DEFAULT_FDT_FILE="mt7987a-emplus-ehr330"
++CONFIG_SYS_CBSIZE=512
++CONFIG_SYS_PBSIZE=1049
++CONFIG_LOGLEVEL=7
++CONFIG_PRE_CONSOLE_BUFFER=y
++CONFIG_LOG=y
++# CONFIG_BOARD_INIT is not set
++CONFIG_HUSH_PARSER=y
++CONFIG_SYS_PROMPT="MT7987> "
++# CONFIG_BOOTM_NETBSD is not set
++# CONFIG_BOOTM_PLAN9 is not set
++# CONFIG_BOOTM_RTEMS is not set
++# CONFIG_BOOTM_VXWORKS is not set
++# CONFIG_CMD_ELF is not set
++# CONFIG_CMD_XIMG is not set
++# CONFIG_CMD_UNLZ4 is not set
++# CONFIG_CMD_UNZIP is not set
++CONFIG_CMD_MTD=y
++CONFIG_CMD_PCI=y
++CONFIG_CMD_TFTPSRV=y
++CONFIG_CMD_PING=y
++CONFIG_CMD_SMC=y
++CONFIG_CMD_UBI=y
++CONFIG_ENV_OVERWRITE=y
++CONFIG_ENV_IS_IN_MTD=y
++CONFIG_ENV_REDUNDANT=y
++CONFIG_ENV_MTD_DEV="u-boot-env"
++CONFIG_ENV_SIZE=0x20000
++CONFIG_ENV_OFFSET=0x0
++CONFIG_ENV_OFFSET_REDUND=0x20000
++CONFIG_ENV_USE_DEFAULT_ENV_TEXT_FILE=y
++CONFIG_ENV_DEFAULT_ENV_TEXT_FILE="defenvs/emplus_ehr330_env"
++CONFIG_ENV_VARS_UBOOT_RUNTIME_CONFIG=y
++CONFIG_USE_IPADDR=y
++CONFIG_IPADDR="192.168.1.1"
++CONFIG_USE_NETMASK=y
++CONFIG_NETMASK="255.255.255.0"
++CONFIG_USE_SERVERIP=y
++CONFIG_SERVERIP="192.168.1.10"
++CONFIG_NET_RANDOM_ETHADDR=y
++CONFIG_REGMAP=y
++CONFIG_SYSCON=y
++CONFIG_CLK=y
++# CONFIG_MMC is not set
++CONFIG_MTD=y
++CONFIG_DM_MTD=y
++CONFIG_MTD_SPI_NAND=y
++CONFIG_MTD_UBI=y
++CONFIG_NMBM=y
++CONFIG_NMBM_MTD=y
++CONFIG_PHY_ETHERNET_ID=y
++CONFIG_PHY_FIXED=y
++CONFIG_MEDIATEK_ETH=y
++CONFIG_PINCTRL=y
++CONFIG_PINCONF=y
++CONFIG_PINCTRL_MT7987=y
++CONFIG_POWER_DOMAIN=y
++CONFIG_MTK_POWER_DOMAIN=y
++CONFIG_DM_SERIAL=y
++CONFIG_SERIAL_RX_BUFFER=y
++CONFIG_MTK_SERIAL=y
++CONFIG_SPI=y
++CONFIG_DM_SPI=y
++CONFIG_MTK_SPIM=y
++CONFIG_HEXDUMP=y
++CONFIG_ZSTD=y
+--- /dev/null
++++ b/defenvs/emplus_ehr330_env
+@@ -0,0 +1,25 @@
++baudrate=115200
++bootargs=ubi.block=0,kernel root=/dev/fit0 rootwait
++bootcmd=ubi part ubi && ubi read ${loadaddr} kernel && bootm ${loadaddr}
++bootdelay=2
++ipaddr=192.168.1.1
++serverip=192.168.1.10
++netmask=255.255.255.0
++loadaddr=0x48000000
++verifyaddr=0x4f000000
++recoveryfile=openwrt-mediatek-filogic-emplus_ehr330-signed-initramfs-recovery.itb
++bl2file=openwrt-mediatek-filogic-emplus_ehr330-signed-spim-nand-preloader.bin
++fipfile=openwrt-mediatek-filogic-emplus_ehr330-signed-spim-nand-bl31-uboot.fip
++kernelfile=openwrt-mediatek-filogic-emplus_ehr330-signed-squashfs-sysupgrade.itb
++boot_recovery=tftpboot ${loadaddr} ${recoveryfile} && bootm ${loadaddr}
++load_bl2=mw.b ${loadaddr} 0xff 0x100000 && tftpboot ${loadaddr} ${bl2file}
++load_fip=mw.b ${loadaddr} 0xff 0x200000 && tftpboot ${loadaddr} ${fipfile}
++load_kernel=tftpboot ${loadaddr} ${kernelfile}
++calc_write_size=setexpr write_size ${filesize} + 0x7ff && setexpr write_size ${write_size} / 0x800 && setexpr write_size ${write_size} * 0x800
++check_bl2_size=test ${filesize} -le 0x100000
++check_fip_size=test ${filesize} -le 0x200000
++write_bl2=run check_bl2_size && run calc_write_size && mtd erase BL2 && mtd write BL2 ${loadaddr} 0 ${write_size}
++verify_bl2=mtd read BL2 ${verifyaddr} 0 ${write_size} && cmp.b ${loadaddr} ${verifyaddr} ${write_size}
++write_fip=run check_fip_size && run calc_write_size && mtd erase FIP && mtd write FIP ${loadaddr} 0 ${write_size}
++verify_fip=mtd read FIP ${verifyaddr} 0 ${write_size} && cmp.b ${loadaddr} ${verifyaddr} ${write_size}
++boot_slot0=ubi part ubi && ubi read ${loadaddr} kernel && bootm ${loadaddr}
+--- /dev/null
++++ b/arch/arm/dts/mt7987a-emplus-ehr330.dts
+@@ -0,0 +1,18 @@
++// SPDX-License-Identifier: GPL-2.0
++
++/dts-v1/;
++#include "mt7987a.dtsi"
++
++/ {
++	model = "Emplus EHR330";
++	compatible = "emplus,ehr330", "mediatek,mt7987";
++
++	chosen {
++		stdout-path = &uart0;
++	};
++
++	memory@40000000 {
++		device_type = "memory";
++		reg = <0x0 0x40000000 0x0 0x40000000>;
++	};
++};
+--- /dev/null
++++ b/arch/arm/dts/mt7987a-emplus-ehr330-u-boot.dtsi
+@@ -0,0 +1,103 @@
++// SPDX-License-Identifier: GPL-2.0
++
++#include "mt7987a-u-boot.dtsi"
++#include "mt7987-netsys-u-boot.dtsi"
++
++&eth0 {
++	status = "okay";
++	pinctrl-names = "default";
++	pinctrl-0 = <&mdio0_pins>;
++	phy-mode = "2500base-x";
++	phy-handle = <&phy2>;
++
++	phy2: ethernet-phy@2 {
++		compatible = "ethernet-phy-ieee802.3-c45";
++		reg = <2>;
++	};
++};
++
++&eth1 {
++	status = "okay";
++	phy-mode = "internal";
++	phy-handle = <&phy15>;
++
++	phy15: ethernet-phy@f {
++		compatible = "ethernet-phy-ieee802.3-c45";
++		reg = <15>;
++	};
++};
++
++&spi0 {
++	pinctrl-names = "default";
++	pinctrl-0 = <&spi0_flash_pins>;
++	#address-cells = <1>;
++	#size-cells = <0>;
++	status = "okay";
++	must_tx;
++	enhance_timing;
++	dma_ext;
++	ipm_design;
++	support_quad;
++	tick_dly = <2>;
++	sample_sel = <0>;
++
++	spi_nand@0 {
++		compatible = "spi-nand";
++		reg = <0>;
++		spi-max-frequency = <52000000>;
++		spi-rx-bus-width = <4>;
++		spi-tx-bus-width = <4>;
++
++		partitions {
++			compatible = "fixed-partitions";
++			#address-cells = <1>;
++			#size-cells = <1>;
++
++			partition@0 {
++				label = "BL2";
++				reg = <0x0 0x100000>;
++			};
++
++			partition@100000 {
++				label = "u-boot-env";
++				reg = <0x100000 0x80000>;
++			};
++
++			partition@180000 {
++				label = "Factory";
++				reg = <0x180000 0x400000>;
++			};
++
++			partition@580000 {
++				label = "FIP";
++				reg = <0x580000 0x200000>;
++			};
++
++			partition@780000 {
++				label = "ubi";
++				reg = <0x780000 0x6d00000>;
++				compatible = "linux,ubi";
++			};
++
++			partition@7480000 {
++				label = "ubi_1";
++				reg = <0x7480000 0x6d00000>;
++			};
++
++			partition@e180000 {
++				label = "cert";
++				reg = <0xe180000 0x60000>;
++			};
++
++			partition@e1e0000 {
++				label = "userconfig";
++				reg = <0xe1e0000 0xa0000>;
++			};
++
++			partition@e280000 {
++				label = "crashdump";
++				reg = <0xe280000 0x60000>;
++			};
++		};
++	};
++};
+--- a/arch/arm/dts/Makefile
++++ b/arch/arm/dts/Makefile
+@@ -1143,2 +1143,3 @@ dtb-$(CONFIG_ARCH_MEDIATEK) += \
+ 	mt7987a-emmc-rfb.dtb \
++	mt7987a-emplus-ehr330.dtb \
+ 	mt7987a-rfb.dtb \
+--- a/board/mediatek/mt7987/mt7987_rfb.c
++++ b/board/mediatek/mt7987/mt7987_rfb.c
+@@ -92,2 +92,33 @@ int mtk_ft_system_setup(void *blob, struct bd_info *bd)
+ 	return 0;
+ }
++#include <mtd.h>
++#include <linux/mtd/mtd.h>
++#include <nmbm/nmbm.h>
++#include <nmbm/nmbm-mtd.h>
++
++int board_nmbm_init(void)
++{
++#ifdef CONFIG_NMBM_MTD
++	struct mtd_info *lower, *upper;
++	int ret;
++
++	printf("\nInitializing NMBM ...\n");
++	mtd_probe_devices();
++
++	lower = get_mtd_device_nm("spi-nand0");
++	if (IS_ERR(lower) || !lower) {
++		printf("Lower MTD device 'spi-nand0' not found\n");
++		return 0;
++	}
++
++	ret = nmbm_attach_mtd(lower,
++			      NMBM_F_CREATE | NMBM_F_EMPTY_PAGE_ECC_OK,
++			      1, 128, &upper);
++	printf("\n");
++	if (ret)
++		return 0;
++
++	add_mtd_device(upper);
++#endif
++	return 0;
++}
+\ No newline at end of file
