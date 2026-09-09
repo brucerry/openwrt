@@ -158,6 +158,7 @@ mediatek_setup_interfaces()
 	glinet,gl-mt2500|\
 	glinet,gl-mt2500-airoha|\
 	glinet,gl-mt3000|\
+	emplus,ehr330|\
 	glinet,gl-mt3600be|\
 	glinet,gl-x3000|\
 	glinet,gl-xe3000|\
