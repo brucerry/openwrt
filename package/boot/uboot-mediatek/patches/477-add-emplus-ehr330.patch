@@ -1,6 +1,6 @@
 --- /dev/null
 +++ b/configs/mt7987a_emplus_ehr330_defconfig
-@@ -0,0 +1,88 @@
+@@ -0,0 +1,87 @@
 +CONFIG_ARM=y
 +CONFIG_SYS_HAS_NONCACHED_MEMORY=y
 +CONFIG_POSITION_INDEPENDENT=y
@@ -48,11 +48,9 @@
 +CONFIG_CMD_UBI=y
 +CONFIG_ENV_OVERWRITE=y
 +CONFIG_ENV_IS_IN_MTD=y
-+CONFIG_ENV_REDUNDANT=y
 +CONFIG_ENV_MTD_DEV="u-boot-env"
 +CONFIG_ENV_SIZE=0x20000
 +CONFIG_ENV_OFFSET=0x0
-+CONFIG_ENV_OFFSET_REDUND=0x20000
 +CONFIG_ENV_USE_DEFAULT_ENV_TEXT_FILE=y
 +CONFIG_ENV_DEFAULT_ENV_TEXT_FILE="defenvs/emplus_ehr330_env"
 +CONFIG_ENV_VARS_UBOOT_RUNTIME_CONFIG=y
@@ -73,9 +71,10 @@
 +CONFIG_MTD_UBI=y
 +CONFIG_NMBM=y
 +CONFIG_NMBM_MTD=y
-+CONFIG_PHY_ETHERNET_ID=y
 +CONFIG_PHY_FIXED=y
++CONFIG_PHY_MEDIATEK_2P5GE=y
 +CONFIG_MEDIATEK_ETH=y
++CONFIG_MTK_ETH_XGMII=y
 +CONFIG_PINCTRL=y
 +CONFIG_PINCONF=y
 +CONFIG_PINCTRL_MT7987=y
@@ -91,7 +90,7 @@
 +CONFIG_ZSTD=y
 --- /dev/null
 +++ b/defenvs/emplus_ehr330_env
-@@ -0,0 +1,25 @@
+@@ -0,0 +1,26 @@
 +baudrate=115200
 +bootargs=ubi.block=0,kernel root=/dev/fit0 rootwait
 +bootcmd=ubi part ubi && ubi read ${loadaddr} kernel && bootm ${loadaddr}
@@ -99,6 +98,7 @@
 +ipaddr=192.168.1.1
 +serverip=192.168.1.10
 +netmask=255.255.255.0
++ethact=ethernet@15110200
 +loadaddr=0x48000000
 +verifyaddr=0x4f000000
 +recoveryfile=openwrt-mediatek-filogic-emplus_ehr330-signed-initramfs-recovery.itb
@@ -140,33 +140,23 @@
 +};
 --- /dev/null
 +++ b/arch/arm/dts/mt7987a-emplus-ehr330-u-boot.dtsi
-@@ -0,0 +1,103 @@
+@@ -0,0 +1,93 @@
 +// SPDX-License-Identifier: GPL-2.0
 +
 +#include "mt7987a-u-boot.dtsi"
 +#include "mt7987-netsys-u-boot.dtsi"
 +
-+&eth0 {
-+	status = "okay";
-+	pinctrl-names = "default";
-+	pinctrl-0 = <&mdio0_pins>;
-+	phy-mode = "2500base-x";
-+	phy-handle = <&phy2>;
-+
-+	phy2: ethernet-phy@2 {
-+		compatible = "ethernet-phy-ieee802.3-c45";
-+		reg = <2>;
-+	};
-+};
-+
 +&eth1 {
 +	status = "okay";
-+	phy-mode = "internal";
++	pinctrl-names = "i2p5gbe-led";
++	pinctrl-0 = <&i2p5gbe_led0_pins>;
++	phy-mode = "xgmii";
 +	phy-handle = <&phy15>;
 +
-+	phy15: ethernet-phy@f {
++	phy15: ethernet-phy@15 {
 +		compatible = "ethernet-phy-ieee802.3-c45";
 +		reg = <15>;
++		phy-mode = "xgmii";
 +	};
 +};
 +
