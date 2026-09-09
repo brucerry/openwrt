@@ -3951,3 +3951,50 @@ define Device/emplus_dam-ap410_unsigned
   ARTIFACT/spim-nand-bl31-uboot.fip := mt7981-bl31-uboot emplus_dam-ap410_unsigned
 endef
 TARGET_DEVICES += emplus_dam-ap410_unsigned
+
+define Device/emplus_ehr330-common
+  DEVICE_VENDOR := Emplus
+  DEVICE_DTS := mt7987a-emplus-ehr330
+  DEVICE_DTS_DIR := ../dts
+  DEVICE_DTC_FLAGS := --pad 4096
+  DEVICE_DTS_LOADADDR := 0x4ff00000
+  DEVICE_PACKAGES := bash emplus-ehr330-defaults mtk-efuse-nl-tool-mt7987 \
+   mt7987-2p5g-phy-firmware kmod-mt7996-233-firmware nand-utils
+  KERNEL_LOADADDR := 0x40000000
+  KERNEL := kernel-bin | gzip
+  KERNEL_INITRAMFS := kernel-bin | lzma | \
+	fit lzma $$(KDIR)/image-$$(firstword $$(DEVICE_DTS)).dtb with-initrd | pad-to 64k
+  KERNEL_INITRAMFS_SUFFIX := -recovery.itb
+  KERNEL_IN_UBI := 1
+  IMAGES := sysupgrade.itb
+  IMAGE_SIZE := 111616k
+  IMAGE/sysupgrade.itb := append-kernel | \
+	fit gzip $$(KDIR)/image-$$(firstword $$(DEVICE_DTS)).dtb external-with-rootfs | \
+	pad-rootfs | append-metadata
+endef
+
+define Device/emplus_ehr330
+  $(call Device/emplus_ehr330-common)
+  DEVICE_MODEL := EHR330
+  DEVICE_IMG_PREFIX := $(IMG_PREFIX)-emplus_ehr330-signed
+  FIT_KEY_DIR := $(TOPDIR)/keys/mtk-secure-boot
+  FIT_KEY_NAME := fit_key
+  FIT_KEY_ALG := sha256,rsa2048
+  ARTIFACTS := spim-nand-preloader.bin spim-nand-bl31-uboot.fip bl2.img.signkeyhash
+  ARTIFACT/spim-nand-preloader.bin := mt7987-bl2 ehr330
+  ARTIFACT/spim-nand-bl31-uboot.fip := mt7987-bl31-uboot emplus_ehr330
+  ARTIFACT/bl2.img.signkeyhash := copy-file $(STAGING_DIR_IMAGE)/mt7987-ehr330-bl2.img.signkeyhash
+endef
+TARGET_DEVICES += emplus_ehr330
+
+define Device/emplus_ehr330_unsigned
+  $(call Device/emplus_ehr330-common)
+  DEVICE_MODEL := EHR330 (unsigned)
+  FIT_KEY_DIR :=
+  FIT_KEY_NAME :=
+  FIT_KEY_ALG :=
+  ARTIFACTS := spim-nand-preloader.bin spim-nand-bl31-uboot.fip
+  ARTIFACT/spim-nand-preloader.bin := mt7987-bl2 spim-nand0
+  ARTIFACT/spim-nand-bl31-uboot.fip := mt7987-bl31-uboot emplus_ehr330_unsigned
+endef
+TARGET_DEVICES += emplus_ehr330_unsigned
