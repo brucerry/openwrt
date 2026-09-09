@@ -1,0 +1,30 @@
+From: OpenWrt EHR330 support <openwrt-devel@lists.openwrt.org>
+Date: Wed, 9 Sep 2026 00:00:00 +0000
+Subject: [PATCH] cfg80211: decode VLP AP flag in wireless backports
+
+EHR330 loads cfg80211 from mac80211 backports, not the base kernel.
+Decode compact firmware database bit 5 as the per-rule VLP permission,
+matching the EHR330 regulatory database and base-kernel decoder.
+Retain NO_IR and the normal cfg80211 beacon permission checks.
+
+--- a/net/wireless/reg.c
++++ b/net/wireless/reg.c
+@@ -624,6 +624,7 @@ enum fwdb_flags {
+ 	FWDB_FLAG_DFS		= BIT(2),
+ 	FWDB_FLAG_NO_IR		= BIT(3),
+ 	FWDB_FLAG_AUTO_BW	= BIT(4),
++	FWDB_FLAG_ALLOW_6GHZ_VLP_AP = BIT(5),
+ };
+ 
+ struct fwdb_wmm_ac {
+@@ -967,6 +968,8 @@ static int regdb_query_country(const str
+ 			rrule->flags |= NL80211_RRF_NO_IR;
+ 		if (rule->flags & FWDB_FLAG_AUTO_BW)
+ 			rrule->flags |= NL80211_RRF_AUTO_BW;
++		if (rule->flags & FWDB_FLAG_ALLOW_6GHZ_VLP_AP)
++			rrule->flags |= NL80211_RRF_ALLOW_6GHZ_VLP_AP;
+ 
+ 		rrule->dfs_cac_ms = 0;
+ 
+-- 
+2.47.0

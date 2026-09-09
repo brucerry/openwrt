@@ -1,0 +1,17 @@
+From: OpenWrt EHR330 support <openwrt-devel@lists.openwrt.org>
+Date: Wed, 9 Sep 2026 00:00:01 +0000
+Subject: [PATCH] hostapd: keep authorized VLP channels enabled
+
+Do not apply the generic NO_IR pre-filter to a 6 GHz channel that advertises
+VLP AP permission when this interface is configured as a VLP AP.
+
+--- a/src/ap/hw_features.c
++++ b/src/ap/hw_features.c
+@@ -144,2 +144,5 @@ int hostapd_get_hw_features(struct hosta
+ 			int dfs = 0;
++
++			if (hostapd_vlp_ap_allowed(iface, &feature->channels[j]))
++				feature->channels[j].flag &= ~HOSTAPD_CHAN_NO_IR;
+ 
+-- 
+2.47.0
