@@ -38,6 +38,8 @@ define U-Boot/Default
   UBOOT_IMAGE:=u-boot-mtk.bin
   HIDDEN:=1
   TFA_TBB:=
+  TFA_TBB_VARIANT:=
+  TFA_TBB_PLAT:=
   FIT_KEY_DIR:=
   FIT_KEY_NAME:=
   FIT_KEY_ALG:=
@@ -641,9 +643,39 @@ define U-Boot/mt7981_emplus_dam-ap410
   BL2_DDRTYPE:=ddr4
   DEPENDS:=+trusted-firmware-a-mt7981-dam-ap410-ddr4
   TFA_TBB:=1
+  TFA_TBB_VARIANT:=mt7981-dam-ap410-ddr4
+  TFA_TBB_PLAT:=mt7981
   FIT_KEY_DIR:=$(TOPDIR)/keys/mtk-secure-boot
   FIT_KEY_NAME:=fit_key
   FIT_KEY_ALG:=sha256,rsa2048
+endef
+
+define U-Boot/mt7987_emplus_ehr330
+  NAME:=Emplus EHR330
+  BUILD_SUBTARGET:=filogic
+  BUILD_DEVICES:=emplus_ehr330
+  UBOOT_CONFIG:=mt7987a_emplus_ehr330
+  UBOOT_IMAGE:=u-boot.fip
+  BL2_BOOTDEV:=ehr330
+  BL2_SOC:=mt7987
+  DEPENDS:=+trusted-firmware-a-mt7987-ehr330
+  TFA_TBB:=1
+  TFA_TBB_VARIANT:=mt7987-ehr330
+  TFA_TBB_PLAT:=mt7987
+  FIT_KEY_DIR:=$(TOPDIR)/keys/mtk-secure-boot
+  FIT_KEY_NAME:=fit_key
+  FIT_KEY_ALG:=sha256,rsa2048
+endef
+
+define U-Boot/mt7987_emplus_ehr330_unsigned
+  NAME:=Emplus EHR330 (unsigned)
+  BUILD_SUBTARGET:=filogic
+  BUILD_DEVICES:=emplus_ehr330_unsigned
+  UBOOT_CONFIG:=mt7987a_emplus_ehr330
+  UBOOT_IMAGE:=u-boot.fip
+  BL2_BOOTDEV:=spim-nand0
+  BL2_SOC:=mt7987
+  DEPENDS:=+trusted-firmware-a-mt7987-spim-nand0
 endef
 
 # Plain/unsigned counterpart: shared non-secure TF-A, no FIT signing.
@@ -1416,6 +1448,8 @@ UBOOT_TARGETS := \
 	mt7987_bananapi_bpi-r4-lite-sdmmc \
 	mt7987_bananapi_bpi-r4-lite-snand \
 	mt7987_bananapi_bpi-r4-lite-nor \
+  mt7987_emplus_ehr330 \
+  mt7987_emplus_ehr330_unsigned \
 	mt7987_rfb-emmc \
 	mt7987_rfb-sd \
 	mt7987_rfb-spim-nand \
@@ -1443,8 +1477,8 @@ ifdef CONFIG_TARGET_mediatek
 UBOOT_MAKE_FLAGS += $(UBOOT_IMAGE:.fip=.bin)
 endif
 
-TFA_DAM_AP410_DIR = $(firstword $(wildcard $(BUILD_DIR)/arm-trusted-firmware-mediatek-mt7981-dam-ap410-ddr4/arm-trusted-firmware-mediatek-* ))
-TFA_DAM_AP410_RELEASE = $(TFA_DAM_AP410_DIR)/build/mt7981/release
+TFA_TBB_DIR = $(firstword $(wildcard $(BUILD_DIR)/arm-trusted-firmware-mediatek-$(TFA_TBB_VARIANT)/arm-trusted-firmware-mediatek-* ))
+TFA_TBB_RELEASE = $(TFA_TBB_DIR)/build/$(TFA_TBB_PLAT)/release
 
 define Build/fip-image
 	$(if $(FIP_COMPRESS),\
@@ -1457,31 +1491,31 @@ define Build/fip-image
 endef
 
 define Build/tbb-fip-image
-  test -n "$(TFA_DAM_AP410_DIR)" && \
-  rm -f $(TFA_DAM_AP410_RELEASE)/fip.bin \
-    $(TFA_DAM_AP410_RELEASE)/trusted_key.crt \
-    $(TFA_DAM_AP410_RELEASE)/soc_fw_key.crt \
-    $(TFA_DAM_AP410_RELEASE)/soc_fw_content.crt \
-    $(TFA_DAM_AP410_RELEASE)/nt_fw_key.crt \
-    $(TFA_DAM_AP410_RELEASE)/nt_fw_content.crt && \
-  $(MAKE) -C $(TFA_DAM_AP410_DIR) \
-    PLAT=mt7981 BUILD_BASE=$(TFA_DAM_AP410_DIR)/build DEBUG=0 \
+  test -n "$(TFA_TBB_DIR)" && \
+  rm -f $(TFA_TBB_RELEASE)/fip.bin \
+    $(TFA_TBB_RELEASE)/trusted_key.crt \
+    $(TFA_TBB_RELEASE)/soc_fw_key.crt \
+    $(TFA_TBB_RELEASE)/soc_fw_content.crt \
+    $(TFA_TBB_RELEASE)/nt_fw_key.crt \
+    $(TFA_TBB_RELEASE)/nt_fw_content.crt && \
+  $(MAKE) -C $(TFA_TBB_DIR) \
+    PLAT=$(TFA_TBB_PLAT) BUILD_BASE=$(TFA_TBB_DIR)/build DEBUG=0 \
     TRUSTED_BOARD_BOOT=1 GENERATE_COT=1 E=0 \
-    MBEDTLS_DIR=$(TFA_DAM_AP410_DIR)/mbedtls-tfa-3.6.7 \
+    MBEDTLS_DIR=$(TFA_TBB_DIR)/mbedtls-tfa-3.6.7 \
     ROT_KEY=$(TOPDIR)/keys/mtk-secure-boot/fip_private_key.pem \
     TRUSTED_WORLD_KEY=$(TOPDIR)/keys/mtk-secure-boot/trusted_private_key.pem \
     NON_TRUSTED_WORLD_KEY=$(TOPDIR)/keys/mtk-secure-boot/non_trusted_private_key.pem \
     BL31_KEY=$(TOPDIR)/keys/mtk-secure-boot/soc_fw_private_key.pem \
     BL33_KEY=$(TOPDIR)/keys/mtk-secure-boot/nt_fw_private_key.pem \
-    BL31=$(TFA_DAM_AP410_RELEASE)/bl31.bin \
+    BL31=$(TFA_TBB_RELEASE)/bl31.bin \
     BL33=$(PKG_BUILD_DIR)/u-boot.bin fip && \
-  $(STAGING_DIR_HOST)/bin/fiptool info $(TFA_DAM_AP410_RELEASE)/fip.bin > $(PKG_BUILD_DIR)/fip.info && \
+  $(STAGING_DIR_HOST)/bin/fiptool info $(TFA_TBB_RELEASE)/fip.bin > $(PKG_BUILD_DIR)/fip.info && \
   grep -q '^Trusted key certificate:' $(PKG_BUILD_DIR)/fip.info && \
   grep -q '^SoC Firmware key certificate:' $(PKG_BUILD_DIR)/fip.info && \
   grep -q '^SoC Firmware content certificate:' $(PKG_BUILD_DIR)/fip.info && \
   grep -q '^Non-Trusted Firmware key certificate:' $(PKG_BUILD_DIR)/fip.info && \
   grep -q '^Non-Trusted Firmware content certificate:' $(PKG_BUILD_DIR)/fip.info && \
-  $(CP) $(TFA_DAM_AP410_RELEASE)/fip.bin $(PKG_BUILD_DIR)/u-boot.fip
+  $(CP) $(TFA_TBB_RELEASE)/fip.bin $(PKG_BUILD_DIR)/u-boot.fip
 endef
 
 ifdef CONFIG_TARGET_ramips_mt7621

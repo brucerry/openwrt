@@ -538,6 +538,15 @@ define Trusted-Firmware-A/mt7987-spim-nand0
   SPIM_CTRL:=0
 endef
 
+define Trusted-Firmware-A/mt7987-ehr330
+  NAME:=Emplus EHR330 (SPI-NAND via SPIM, secure boot)
+  BOOT_DEVICE:=spim-nand
+  BUILD_SUBTARGET:=filogic
+  PLAT:=mt7987
+  SPIM_CTRL:=0
+  TFA_TRUSTED_BOARD_BOOT:=1
+endef
+
 define Trusted-Firmware-A/mt7987-spim-nand0-ubi-comb
   NAME:=MediaTek MT7987 (SPI-NAND via SPIM, UBI)
   BOOT_DEVICE:=spim-nand
@@ -788,6 +797,7 @@ TFA_TARGETS:= \
 	mt7987-sdmmc-comb \
 	mt7987-sdmmc-ddr4-4bg \
 	mt7987-spim-nand0 \
+  mt7987-ehr330 \
 	mt7987-spim-nand0-ubi-comb \
 	mt7987-spim-nand2-ubi-comb \
 	mt7987-ram-comb \
@@ -832,7 +842,7 @@ TFA_KEY_ALG ?=
 TFA_HASH_ALG ?=
 TFA_E ?=
 
-TFA_DAM_AP410_SECURE_FLAGS = \
+TFA_EMPLUS_SECURE_FLAGS = \
 	TRUSTED_BOARD_BOOT=1 GENERATE_COT=1 E=0 \
 	ROT_KEY=$(TOPDIR)/keys/mtk-secure-boot/fip_private_key.pem \
 	BROM_SIGN_KEY=$(TOPDIR)/keys/mtk-secure-boot/bl2_private_key.pem \
@@ -844,7 +854,7 @@ TFA_DAM_AP410_SECURE_FLAGS = \
 
 TFA_MAKE_FLAGS += \
 	BOOT_DEVICE=$(BOOT_DEVICE) \
-	$(if $(filter mt7981-dam-ap410-ddr4,$(BUILD_VARIANT)),,USE_MKIMAGE=1 MKIMAGE=$(STAGING_DIR_HOST)/bin/mkimage) \
+  $(if $(filter mt7981-dam-ap410-ddr4 mt7987-ehr330,$(BUILD_VARIANT)),,USE_MKIMAGE=1 MKIMAGE=$(STAGING_DIR_HOST)/bin/mkimage) \
 	$(if $(findstring ddr4,$(DDR_TYPE)),DRAM_USE_DDR4=1) \
 	$(if $(BOARD_QFN),BOARD_QFN=1,BOARD_BGA=1) \
 	$(if $(NAND_TYPE),NAND_TYPE=$(NAND_TYPE)) \
@@ -877,7 +887,7 @@ TFA_MAKE_FLAGS += \
 		$(if $(TFA_KEY_ALG),KEY_ALG=$(TFA_KEY_ALG)) \
 		$(if $(TFA_HASH_ALG),HASH_ALG=$(TFA_HASH_ALG)) \
 		$(if $(TFA_E),E=$(TFA_E),$(if $(TFA_TRUSTED_BOARD_BOOT),E=0)) \
-		$(if $(filter mt7981-dam-ap410-ddr4,$(BUILD_VARIANT)),$(TFA_DAM_AP410_SECURE_FLAGS)) \
+    $(if $(filter mt7981-dam-ap410-ddr4 mt7987-ehr330,$(BUILD_VARIANT)),$(TFA_EMPLUS_SECURE_FLAGS)) \
 		$(if $(RAM_BOOT_UART_DL),bl2,all)
 
 define Package/trusted-firmware-a-ram/install
@@ -904,5 +914,7 @@ define Package/trusted-firmware-a-mt7981-dam-ap410-ddr4/install
 	$(call Package/trusted-firmware-a/install)
 	$(INSTALL_DATA) $(PKG_BUILD_DIR)/build/$(PLAT)/release/bl2.img.signkeyhash $(STAGING_DIR_IMAGE)/$(BUILD_VARIANT)-bl2.img.signkeyhash
 endef
+
+Package/trusted-firmware-a-mt7987-ehr330/install = $(Package/trusted-firmware-a-mt7981-dam-ap410-ddr4/install)
 
 $(eval $(call BuildPackage/Trusted-Firmware-A))
