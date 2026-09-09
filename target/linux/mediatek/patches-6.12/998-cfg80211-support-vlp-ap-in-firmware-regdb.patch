@@ -1,0 +1,25 @@
+From: OpenWrt EHR330 support <openwrt-devel@lists.openwrt.org>
+Date: Tue, 8 Sep 2026 00:00:00 +0000
+Subject: [PATCH] cfg80211: decode VLP AP flag from firmware regdb
+
+The compact version 20 firmware database has three unused flag bits. Use bit 5
+to carry NL80211_RRF_ALLOW_6GHZ_VLP_AP so regulatory rules can authorize VLP
+AP operation on channels which otherwise retain NO_IR.
+
+--- a/net/wireless/reg.c
++++ b/net/wireless/reg.c
+@@ -624,4 +624,5 @@ enum fwdb_flags {
+ 	FWDB_FLAG_DFS		= BIT(2),
+ 	FWDB_FLAG_NO_IR		= BIT(3),
+ 	FWDB_FLAG_AUTO_BW	= BIT(4),
++	FWDB_FLAG_ALLOW_6GHZ_VLP_AP = BIT(5),
+ };
+@@ -967,6 +968,8 @@ static int regdb_query_country(const str
+ 			rrule->flags |= NL80211_RRF_NO_IR;
+ 		if (rule->flags & FWDB_FLAG_AUTO_BW)
+ 			rrule->flags |= NL80211_RRF_AUTO_BW;
++		if (rule->flags & FWDB_FLAG_ALLOW_6GHZ_VLP_AP)
++			rrule->flags |= NL80211_RRF_ALLOW_6GHZ_VLP_AP;
+ 
+ 		rrule->dfs_cac_ms = 0;
+ 

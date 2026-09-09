@@ -1,0 +1,36 @@
+From: OpenWrt EHR330 support <openwrt-devel@lists.openwrt.org>
+Date: Wed, 9 Sep 2026 00:00:02 +0000
+Subject: [PATCH] hostapd: preserve VLP AP across regulatory updates
+
+Treat an authorized VLP channel as usable when processing a refreshed channel
+list so a country update does not stop an otherwise valid VLP AP.
+
+--- a/src/ap/hostapd.c
++++ b/src/ap/hostapd.c
+@@ -1989,7 +1989,8 @@ static int hostapd_no_ir_channel_list_up
+ 
+ 			for (j = 0; j < mode->num_channels; j++) {
+ 				if (!(mode->channels[j].flag &
+-				      HOSTAPD_CHAN_NO_IR))
++				      HOSTAPD_CHAN_NO_IR) ||
++				    hostapd_vlp_ap_allowed(iface, &mode->channels[j]))
+ 					all_no_ir = false;
+ 
+ 				if (is_6ghz_freq(mode->channels[j].freq))
+@@ -2026,2 +2027,3 @@ static int hostapd_no_ir_channel_list_up
+-			if (!(chan->flag & HOSTAPD_CHAN_NO_IR))
++			if (!(chan->flag & HOSTAPD_CHAN_NO_IR) ||
++			    hostapd_vlp_ap_allowed(iface, chan))
+				goto free_hw_features;
+@@ -2059,7 +2061,8 @@ static int hostapd_no_ir_channel_list_up
+ 
+ 			/* If the last operating channel is NO_IR, trigger ACS.
+ 			 */
+-			if (chan->flag & HOSTAPD_CHAN_NO_IR) {
++			if ((chan->flag & HOSTAPD_CHAN_NO_IR) &&
++			    !hostapd_vlp_ap_allowed(iface, chan)) {
+ 				iface->freq = 0;
+ 				iface->conf->channel = 0;
+ 				if (acs_init(iface) != HOSTAPD_CHAN_ACS)
+-- 
+2.47.0
