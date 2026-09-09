@@ -1,0 +1,69 @@
+From: OpenWrt EHR330 support <openwrt-devel@lists.openwrt.org>
+Date: Wed, 9 Sep 2026 00:00:00 +0000
+Subject: [PATCH] nl80211: allow VLP AP on authorized 6 GHz channels
+
+Linux can mark a 6 GHz channel both NO_IR and ALLOW_6GHZ_VLP_AP. Parse the
+latter flag and do not disable such a channel when hostapd is configured for
+VLP operation. cfg80211 remains responsible for validating the AP power type
+from the HE operation element before beaconing.
+
+--- a/src/drivers/driver.h
++++ b/src/drivers/driver.h
+@@ -51,6 +51,7 @@ struct hostapd_channel_data {
+ #define HOSTAPD_CHAN_INDOOR_ONLY 0x00010000
+ #define HOSTAPD_CHAN_GO_CONCURRENT 0x00020000
+ #define HOSTAPD_CHAN_AUTO_BW 0x00040000
++#define HOSTAPD_CHAN_ALLOW_6GHZ_VLP_AP 0x00080000
+ 
+ /* Allowed bandwidth mask */
+ enum hostapd_chan_width_attr {
+--- a/src/drivers/driver_nl80211_capa.c
++++ b/src/drivers/driver_nl80211_capa.c
+@@ -1725,6 +1725,8 @@ static void phy_info_freq(struct hostapd
+ 		chan->flag |= HOSTAPD_CHAN_DISABLED;
+ 	if (tb_freq[NL80211_FREQUENCY_ATTR_NO_IR])
+ 		chan->flag |= HOSTAPD_CHAN_NO_IR;
++	if (tb_freq[NL80211_FREQUENCY_ATTR_ALLOW_6GHZ_VLP_AP])
++		chan->flag |= HOSTAPD_CHAN_ALLOW_6GHZ_VLP_AP;
+ 	if (tb_freq[NL80211_FREQUENCY_ATTR_RADAR])
+ 		chan->flag |= HOSTAPD_CHAN_RADAR;
+ 	if (tb_freq[NL80211_FREQUENCY_ATTR_INDOOR_ONLY])
+@@ -1839,6 +1841,7 @@ static int phy_info_freqs(struct phy_inf
+ 		[NL80211_FREQUENCY_ATTR_FREQ] = { .type = NLA_U32 },
+ 		[NL80211_FREQUENCY_ATTR_DISABLED] = { .type = NLA_FLAG },
+ 		[NL80211_FREQUENCY_ATTR_NO_IR] = { .type = NLA_FLAG },
++		[NL80211_FREQUENCY_ATTR_ALLOW_6GHZ_VLP_AP] = { .type = NLA_FLAG },
+ 		[NL80211_FREQUENCY_ATTR_RADAR] = { .type = NLA_FLAG },
+ 		[NL80211_FREQUENCY_ATTR_MAX_TX_POWER] = { .type = NLA_U32 },
+ 		[NL80211_FREQUENCY_ATTR_DFS_STATE] = { .type = NLA_U32 },
+--- a/src/ap/hw_features.c
++++ b/src/ap/hw_features.c
+@@ -75,6 +75,16 @@ static char * dfs_info(struct hostapd_ch
+ #endif /* CONFIG_NO_STDOUT_DEBUG */
+ 
+ 
++bool hostapd_vlp_ap_allowed(struct hostapd_iface *iface,
++				 struct hostapd_channel_data *chan)
++{
++	return is_6ghz_freq(chan->freq) &&
++		iface->conf->he_6ghz_reg_pwr_type ==
++		HE_REG_INFO_6GHZ_AP_TYPE_VLP &&
++		(chan->flag & HOSTAPD_CHAN_ALLOW_6GHZ_VLP_AP);
++}
++
++
+ int hostapd_get_hw_features(struct hostapd_iface *iface)
+ {
+ 	struct hostapd_data *hapd = iface->bss[0];
+--- a/src/ap/hw_features.h
++++ b/src/ap/hw_features.h
+@@ -31,5 +31,7 @@ int hostapd_determine_mode(struct hostap
+ void hostapd_free_multi_hw_info(struct hostapd_multi_hw_info *multi_hw_info);
+ int hostapd_set_current_hw_info(struct hostapd_iface *iface, int oper_freq);
++bool hostapd_vlp_ap_allowed(struct hostapd_iface *iface,
++				 struct hostapd_channel_data *chan);
+ #else /* NEED_AP_MLME */
+ static inline void
+ hostapd_free_hw_features(struct hostapd_hw_modes *hw_features,
+-- 
+2.47.0

@@ -1,0 +1,27 @@
+--- a/dbparse.py
++++ b/dbparse.py
+@@ -20,2 +20,3 @@ flag_definitions = {
+	# hole at bit 9. FIXME: Where is NO-HT40 defined?
++    'ALLOW-6GHZ-VLP-AP': 1<<24,
+	'NO-HT40':		1<<10,
+--- a/db2fw.py
++++ b/db2fw.py
+@@ -109 +109 @@ for reg_rule in rules:
+-    assert reg_rule.flags & ~0x899 == 0
++    assert reg_rule.flags & ~(0x899 | 1<<24) == 0
+@@ -120,0 +121,2 @@ for reg_rule in rules:
++    if reg_rule.flags & 1<<24:
++        flags |= 1<<5
+--- a/db.txt
++++ b/db.txt
+@@ -2095,6 +2095,9 @@ country US: DFS-FCC
+ 	# 6g band
+ 	# https://www.federalregister.gov/documents/2020/05/26/2020-11236/unlicensed-use-of-the-6ghz-band
+-	(5925 - 7125 @ 320), (12), NO-OUTDOOR, NO-IR
++	(5925 - 6425 @ 320), (12), NO-OUTDOOR, NO-IR, ALLOW-6GHZ-VLP-AP
++	(6425 - 6525 @ 80), (12), NO-OUTDOOR, NO-IR
++	(6525 - 6875 @ 320), (12), NO-OUTDOOR, NO-IR, ALLOW-6GHZ-VLP-AP
++	(6875 - 7125 @ 160), (12), NO-OUTDOOR, NO-IR
+ 	# 60g band
+ 	# reference: section IV-D https://docs.fcc.gov/public/attachments/FCC-16-89A1.pdf
+	# channels 1-6 EIRP=40dBm(43dBm peak)
