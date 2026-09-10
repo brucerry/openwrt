@@ -1,10 +1,38 @@
 From: OpenWrt EHR330 support <openwrt-devel@lists.openwrt.org>
 Date: Tue, 8 Sep 2026 00:00:00 +0000
-Subject: [PATCH] cfg80211: decode VLP AP flag from firmware regdb
+Subject: [PATCH] cfg80211: support VLP AP with the firmware regdb
 
 The compact version 20 firmware database has three unused flag bits. Use bit 5
 to carry NL80211_RRF_ALLOW_6GHZ_VLP_AP so regulatory rules can authorize VLP
 AP operation on channels which otherwise retain NO_IR.
+
+Allow an AP to preset a VLP-authorized 6 GHz channel. Presetting does not
+start transmission; START_AP still parses the HE operation element and
+performs the normal power-type-aware beacon permission check.
+Retain that validated power type so the delayed regulatory enforcement pass
+does not stop a running VLP AP after its 60-second grace period.
+
+--- a/include/net/cfg80211.h
++++ b/include/net/cfg80211.h
+@@ -6454,6 +6454,7 @@ struct wireless_dev {
+ 			struct {
+ 				unsigned int beacon_interval;
+ 				struct cfg80211_chan_def chandef;
++				enum ieee80211_ap_reg_power reg_power;
+ 			} ap;
+ 			struct {
+ 				struct cfg80211_internal_bss *current_bss;
+
+--- a/net/wireless/ap.c
++++ b/net/wireless/ap.c
+@@ -34,6 +34,7 @@ static int ___cfg80211_stop_ap(struct cf
+ 	if (!err) {
+ 		wdev->conn_owner_nlportid = 0;
+ 		wdev->links[link_id].ap.beacon_interval = 0;
++		wdev->links[link_id].ap.reg_power = IEEE80211_REG_UNSET_AP;
+ 		memset(&wdev->links[link_id].ap.chandef, 0,
+ 		       sizeof(wdev->links[link_id].ap.chandef));
+ 		wdev->u.ap.ssid_len = 0;
 
 --- a/net/wireless/reg.c
 +++ b/net/wireless/reg.c
@@ -14,7 +42,7 @@ AP operation on channels which otherwise retain NO_IR.
  	FWDB_FLAG_AUTO_BW	= BIT(4),
 +	FWDB_FLAG_ALLOW_6GHZ_VLP_AP = BIT(5),
  };
-@@ -967,6 +968,8 @@ static int regdb_query_country(const str
+@@ -967,5 +968,7 @@ static int regdb_query_country(const str
  			rrule->flags |= NL80211_RRF_NO_IR;
  		if (rule->flags & FWDB_FLAG_AUTO_BW)
  			rrule->flags |= NL80211_RRF_AUTO_BW;
@@ -22,4 +50,77 @@ AP operation on channels which otherwise retain NO_IR.
 +			rrule->flags |= NL80211_RRF_ALLOW_6GHZ_VLP_AP;
  
  		rrule->dfs_cac_ms = 0;
+@@ -2444,11 +2446,23 @@ static bool reg_wdev_chan_valid(struct w
  
+ 		switch (iftype) {
+-		case NL80211_IFTYPE_AP:
++		case NL80211_IFTYPE_AP: {
++			struct cfg80211_beaconing_check_config config = {
++				.iftype = iftype,
++				.reg_power = wdev->links[link].ap.reg_power,
++				.relax = true,
++			};
++
++			ret = cfg80211_reg_check_beaconing(wiphy, &chandef,
++							&config);
++			if (!ret)
++				return ret;
++			break;
++		}
+ 		case NL80211_IFTYPE_P2P_GO:
+ 		case NL80211_IFTYPE_ADHOC:
+ 		case NL80211_IFTYPE_MESH_POINT:
+ 			ret = cfg80211_reg_can_beacon_relax(wiphy, &chandef,
+ 							    iftype);
+ 			if (!ret)
+ 				return ret;
+ 			break;
+
+--- a/net/wireless/nl80211.c
++++ b/net/wireless/nl80211.c
+@@ -3490,5 +3490,10 @@ static int __nl80211_set_channel(struct
+ 	struct wireless_dev *wdev = NULL;
+ 	int link_id = _link_id;
++	struct cfg80211_beaconing_check_config vlp_check = {
++		.iftype = NL80211_IFTYPE_AP,
++		.relax = true,
++		.reg_power = IEEE80211_REG_VLP_AP,
++	};
+ 
+ 	if (dev)
+ 		wdev = dev->ieee80211_ptr;
+@@ -3515,9 +3520,13 @@ static int __nl80211_set_channel(struct
+ 	switch (iftype) {
+ 	case NL80211_IFTYPE_AP:
+ 	case NL80211_IFTYPE_P2P_GO:
+-		if (!cfg80211_reg_can_beacon_relax(&rdev->wiphy, &chandef,
+-						   iftype))
++		if (!cfg80211_reg_can_beacon_relax(&rdev->wiphy, &chandef,
++						   iftype) &&
++		    (iftype != NL80211_IFTYPE_AP ||
++		     chandef.chan->band != NL80211_BAND_6GHZ ||
++		     !cfg80211_reg_check_beaconing(&rdev->wiphy, &chandef,
++						    &vlp_check)))
+ 			return -EINVAL;
+ 		if (wdev->links[link_id].ap.beacon_interval) {
+ 			struct ieee80211_channel *cur_chan;
+ 
+@@ -6342,6 +6351,7 @@ static int nl80211_start_ap(struct sk_bu
+ 	if (!err) {
+ 		wdev->links[link_id].ap.beacon_interval = params->beacon_interval;
+ 		wdev->links[link_id].ap.chandef = params->chandef;
++		wdev->links[link_id].ap.reg_power = beacon_check.reg_power;
+ 		wdev->u.ap.ssid_len = params->ssid_len;
+ 		memcpy(wdev->u.ap.ssid, params->ssid,
+ 		       params->ssid_len);
+@@ -6427,6 +6437,8 @@ static int nl80211_set_beacon(struct sk_
+ 	}
+ 
+ 	err = rdev_change_beacon(rdev, dev, params);
++	if (!err && beacon_check.reg_power != IEEE80211_REG_UNSET_AP)
++		wdev->links[link_id].ap.reg_power = beacon_check.reg_power;
+ 
+ out:
+ 	kfree(params->beacon.mbssid_ies);
+-- 
+2.47.0
