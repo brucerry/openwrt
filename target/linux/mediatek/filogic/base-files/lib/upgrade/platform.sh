@@ -121,6 +121,7 @@ platform_do_upgrade() {
 	cudy,wr3000s-v1-ubootmod|\
 	cudy,wr3000h-v1-ubootmod|\
 	cudy,wr3000p-v1-ubootmod|\
+	emplus,ehr330|\
 	gatonetworks,gdsp|\
 	globitel,bt-r320|\
 	h3c,magic-nx30-pro|\
@@ -198,7 +199,6 @@ platform_do_upgrade() {
 	cudy,wr3000h-v1|\
 	cudy,wr3000p-v1|\
 	emplus,dam-ap410|\
-	emplus,ehr330|\
 	huasifei,wh3000-pro-nand|\
 	huasifei,wh3000r-nand|\
 	jiorouter,ax6000-jidu6101)
@@ -339,6 +339,7 @@ platform_check_image() {
 	cudy,wr3000h-v1-ubootmod|\
 	cudy,wr3000p-v1-ubootmod|\
 	emplus,dam-ap410|\
+	emplus,ehr330|\
 	gatonetworks,gdsp|\
 	globitel,bt-r320|\
 	h3c,magic-nx30-pro|\
