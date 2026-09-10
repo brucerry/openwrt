@@ -14,6 +14,7 @@
 
 	chosen {
 		bootargs = "console=ttyS0,115200n1 earlycon=uart8250,mmio32,0x11000000 pci=pcie_bus_perf";
+		rootdisk = <&ubi_rootdisk>;
 		stdout-path = "serial0:115200n8";
 	};
 
@@ -128,6 +129,12 @@
 				label = "ubi";
 				reg = <0x0780000 0x06d00000>;
 				compatible = "linux,ubi";
+
+				volumes {
+					ubi_rootdisk: ubi-volume-kernel {
+						volname = "kernel";
+					};
+				};
 			};
 
 			partition@7480000 {
