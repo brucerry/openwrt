@@ -1,0 +1,32 @@
+From: OpenWrt EHR330 support <openwrt-devel@lists.openwrt.org>
+Date: Wed, 9 Sep 2026 00:00:00 +0000
+Subject: [PATCH] net: phy: realtek: use upstream SerDes sequence on EHR330
+
+Keep the RTL8221B-VB-CG C45 config_init callback: omitting it leaves
+possible_interfaces and rate_matching unset and relies on bootloader state.
+
+On EHR330, finish after the upstream RTL822xB SerDes option-mode sequence.
+The additional OpenWrt ALDPS/SGMII-AN/restart tail is absent from upstream
+Linux v6.19 and its self-clearing-bit poll times out on this board. The
+reset retry cannot recover it without confirmed reset GPIO wiring.
+
+Retain MDIO broadcast disable, mode selection, interface advertisement,
+rate matching and propagation of MDIO write errors. Other boards retain
+the existing OpenWrt sequence. Hardware DHCP/traffic validation is required.
+
+Reference: https://codebrowser.dev/linux/linux/drivers/net/phy/realtek/realtek_main.c.html
+
+--- a/drivers/net/phy/realtek/realtek_main.c
++++ b/drivers/net/phy/realtek/realtek_main.c
+@@ -1310,6 +1310,9 @@ static int rtl822x_set_serdes_option_mode
+ 			return ret;
+ 	}
+ 
++	if (!gen1 && of_machine_is_compatible("emplus,ehr330"))
++		return 0;
++
+ 	if (of_property_read_bool(phydev->mdio.dev.of_node, "realtek,aldps-enable"))
+ 		ret = phy_set_bits_mmd(phydev, MDIO_MMD_VEND1, RTL8221B_PHYCR1,
+ 				 RTL8221B_PHYCR1_ALDPS_EN | RTL8221B_PHYCR1_ALDPS_XTAL_OFF_EN);
+-- 
+2.47.0
