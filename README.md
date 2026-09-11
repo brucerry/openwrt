@@ -15,19 +15,20 @@ This tree adds OpenWrt 25.12 support for the Emplus EHR330, based on the MediaTe
 | Wi-Fi | MT7996 2+3+3 PCIe radio (`14c3:7990`), intended 2.4/5/6 GHz operation |
 | Console | UART0, 115200 8N1 |
 
-The `signed` profile produces this trust chain:
-
-```text
-BootROM -> signed BL2 -> authenticated TBB FIP/BL31/U-Boot -> RSA-signed FIT
-```
-
-`emplus_ehr330` is the signed production profile.\
-`emplus_ehr330_unsigned` is for development only on devices that do not enforce BootROM secure boot.\
-The profiles are mutually exclusive.
-
 ---
 
 ## Build
+
+> [!TIP]
+> The `signed` profile produces this trust chain:
+>
+> ```text
+> BootROM → signed BL2 → authenticated TBB FIP/BL31/U-Boot → RSA-signed FIT
+> ```
+> 
+> `emplus_ehr330` is the signed production profile.\
+> `emplus_ehr330_unsigned` is for development only on devices that do not enforce > BootROM secure boot.\
+> The profiles are mutually exclusive.
 
 Keep signing keys outside source control. To build the `signed` profile:
 
@@ -172,6 +173,47 @@ Require `es` to report `blown`, then fully remove power and capture a cold boot.
 It must reach signed BL2, authenticated FIP, signed FIT, and Linux. Do not
 program `dh`, `ea`, `db`, `dj`, or slot 1 as part of this procedure.
 
+Normal BootROM:
+> V0: 0000\
+> 00: 0000
+```text
+F0: 102B 0000
+FA: 1040 0000
+FA: 1040 0000 [0200]
+F9: 0000 0000
+V0: 0000 0000 [0001]
+00: 0000 0000
+BP: 2400 0041 [0000]
+G0: 1190 0000
+EC: 0000 0000 [1000]
+T0: 0000 028A [010F]
+Jump to BL
+```
+
+Fused BootROM with unsigned BL2:
+> V0: 100C, INVALID_SIG_TYPE\
+> 00: 1017, BL_VERIFY_FAILED
+```text
+F0: 102B 0000
+FA: 1040 0000
+FA: 1040 0000 [0200]
+F9: 0000 0000
+V0: 100C 0000 [0001]
+00: 1017 0000
+F9: 0000 0000
+V0: 100C 0000 [0001]
+01: 102A 0001
+02: 1017 0000
+BP: 2000 02C0 [0001]
+EC: 0000 0000 [1000]
+T0: 0000 023C [000F]
+System halt!
+```
+
+Fused BootROM with signed BL2 but wrong key:
+> V0: 706D, KEY_MISMATCH\
+> 00: 1017, BL_VERIFY_FAILED
+
 ---
 
 ## Complete signing-key rotation
@@ -192,12 +234,54 @@ cold and software-reset boots.
 
 ## Flash future builds
 
-For routine signed updates, verify the release checksum, run `sysupgrade -T`,
-then run `sysupgrade` from signed initramfs recovery. Do not perform that upgrade
-from persistent OpenWrt because its `kernel` UBI volume backs `/dev/fit0`.
+Back up the device first. Preserve `Factory`, update FIP before BL2, verify each
+readback before reset, and update BL2 last. These commands assume the OpenWrt
+U-Boot defaults from this tree and a TFTP server at `192.168.1.10`.
 
-Do not reflash FIP or BL2 for an ordinary image update. For a matched bootloader
-update, preserve `Factory` and `ubi_1`, write FIP before BL2, and perform the
-U-Boot read-back comparison before every reset. Never use eFuse write commands
-as part of routine updates.
+Load, inspect, write, and verify FIP as separate actions:
 
+```text
+run load_fip
+echo ${filesize}
+crc32 ${loadaddr} ${filesize}
+run write_fip
+run verify_fip
+```
+
+Confirm the reported transfer size against the current host file and record the
+CRC before `run write_fip`. Do not reset if `run verify_fip` fails.
+
+Update the kernel/root filesystem from signed initramfs recovery:
+
+```text
+run boot_recovery
+```
+
+Then on the recovery system:
+
+```sh
+cd /tmp
+IMAGE=openwrt-mediatek-filogic-emplus_ehr330-signed-squashfs-sysupgrade.itb
+tftp -g -r "$IMAGE" -l "$IMAGE" 192.168.1.10
+sha256sum "$IMAGE"
+sysupgrade -T "/tmp/$IMAGE"
+sysupgrade -n "/tmp/$IMAGE"
+```
+
+Do not run this upgrade from persistent OpenWrt because its UBI `kernel` volume
+backs the mounted `/dev/fit0`.
+
+Only after the new FIP and persistent image boot repeatedly, inspect eFuses with
+read commands (`es r`, `ph r 0`, and `ph r 1`). Never use eFuse write commands
+as part of a routine firmware update. If secure boot is enabled, stop unless a
+fused public-key hash exactly matches the current build's `*.signkeyhash`.
+
+Load and verify BL2 last:
+
+```text
+run load_bl2
+echo ${filesize}
+crc32 ${loadaddr} ${filesize}
+run write_bl2
+run verify_bl2
+```
