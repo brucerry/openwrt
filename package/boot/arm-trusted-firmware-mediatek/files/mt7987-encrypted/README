@@ -1,0 +1,10 @@
+MediaTek MT7987 encryption compatibility overlay.
+
+Source snapshot commit: e88fb48a2e4e8c907dde0819e07c8dde23ab823b,
+supplied by MediaTek/Emplus. The source is shared by MT7987 targets; board
+profiles provide boot-device, signing, key, nonce, and salt parameters.
+
+mtk_plat_key.a is proprietary, required for platform-key eFuse access, and has
+SHA256 ca19175ab382621d7b60c86a0b594d1f3d828e4e0e3ef8b856d55293747c41f7.
+
+All other copied source retains its upstream SPDX headers.
