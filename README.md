@@ -132,10 +132,75 @@ or only an encrypted FIP under a plain BL2. Preserve `Factory`, retain UART acce
 
 ---
 
+## Signed installation and updates
+
+The signed profile provides authentication without firmware encryption and does not require a platform key.\
+Do not run the platform-key `ak w` or `al w` commands when deploying signed-only firmware.
+
+This procedure starts from this tree's working unsigned or signed U-Boot.\
+When starting from vendor firmware, first complete the unsigned RAM-recovery probe above and migrate to this tree's plain bootloader; do not pass OpenWrt `.itb` files to the unverified vendor `mtkupgrade` command.
+
+At U-Boot, RAM-boot a recovery FIT that the **currently running** U-Boot can verify:
+
+```text
+# Current signed U-Boot:
+setenv recoveryfile openwrt-mediatek-filogic-emplus_ehr330-signed-initramfs-recovery.itb
+
+# Current unsigned U-Boot:
+setenv recoveryfile openwrt-mediatek-filogic-emplus_ehr330_unsigned-initramfs-recovery.itb
+
+run boot_recovery
+```
+
+Install the signed persistent image from recovery:
+
+```sh
+cd /tmp
+IMAGE=openwrt-mediatek-filogic-emplus_ehr330-signed-squashfs-sysupgrade.itb
+tftp -g -r "$IMAGE" -l "$IMAGE" 192.168.1.10
+sha256sum "$IMAGE"
+sysupgrade -T "/tmp/$IMAGE"
+sysupgrade -n "/tmp/$IMAGE"
+```
+
+Do not run this from persistent OpenWrt because its UBI `kernel` volume backs the mounted `/dev/fit0`.\
+Interrupt the automatic reboot, then write and verify the signed FIP before writing BL2 last:
+
+```text
+setenv fipfile openwrt-mediatek-filogic-emplus_ehr330-signed-spim-nand-bl31-uboot.fip
+run load_fip
+echo ${filesize}
+crc32 ${loadaddr} ${filesize}
+run write_fip
+run verify_fip
+
+setenv bl2file openwrt-mediatek-filogic-emplus_ehr330-signed-spim-nand-preloader.bin
+run load_bl2
+echo ${filesize}
+crc32 ${loadaddr} ${filesize}
+run write_bl2
+run verify_bl2
+```
+
+Confirm each transfer size and CRC against the host artifact. Do not reset after a failed readback or between the FIP and BL2 writes.\
+If BootROM secure boot is enabled, the signed BL2 hash must match the active eFuse slot before writing anything.
+
+After reset, require the signed BL2, authenticated FIP, signed FIT, and Linux to boot without verification errors.\
+Platform-key state is irrelevant to signed-only images because no firmware decryption is requested.
+
+---
+
 ## Provision the platform key
 
 Platform-key programming is irreversible because eFuse bits only move in one direction.\
 Use stable power and confirm the EHR330 hardware requirement that `AVDD18_VQPS` is tied to 1.8 V before any write.
+
+The encrypted build reads the platform key from `~/openwrt/keys/mtk-secure-boot/platform_key.bin` inside the `ubt26.04` container,\
+which is `/root/openwrt/keys/mtk-secure-boot/platform_key.bin`. Generate it with `./scripts/gen-mtk-secureboot-keys.sh --encryption`.\
+The official programming reference is `~/share/ubt26.04/MT798x Secure Boot Provision Application Note V1.2_for_Emplus.pdf`.
+
+Do not confuse `platform_key.bin` with the proprietary `mtk_plat_key.a` build library.\
+There is no separate platform-key enable bit: `ak w` programs the key and makes it available for key derivation; `al w` permanently locks further writes and enables read protection after reset.
 
 The target must be running this tree's MediaTek eFuse tool and a compatible BL31 eFuse service.\
 Stop if either read command fails, if the platform-key field is not all zero, or if its write lock is already blown:
@@ -145,10 +210,11 @@ mtk-efuse-tool-mt7987 ak r
 mtk-efuse-tool-mt7987 al r
 ```
 
-On the build host, verify the key file length and transfer that exact file to the target over a controlled network:
+On the build host, verify the key file length and transfer that exact file to the target as `/tmp/platform_key.bin` over a controlled network:
 
 ```sh
-KEY=keys/mtk-secure-boot/platform_key.bin
+cd ~/openwrt
+KEY="$PWD/keys/mtk-secure-boot/platform_key.bin"
 test "$(stat -c %s "$KEY")" -eq 16
 sha256sum "$KEY"
 ```
@@ -303,13 +369,65 @@ mtk-efuse-tool-mt7987 es w
 mtk-efuse-tool-mt7987 es r
 ```
 
-Fully remove power and require a clean boot through encrypted Linux.\
-`V0: 100C` with `BL_VERIFY_FAILED` indicates an unsigned BL2; `V0: 706D` with `BL_VERIFY_FAILED` indicates a signing-key mismatch.\
+Fully remove power and require a clean boot through the selected signed or encrypted Linux image.\
 Do not program `dh`, `ea`, `db`, `dj`, or slot 1 as part of this procedure.
+
+### BootROM UART comparison
+
+Use these UART traces to distinguish a normal BootROM handoff from the two expected secure-boot failures.
+
+Normal BootROM:
+
+> `V0: 0000`\
+> `00: 0000`
+
+```text
+F0: 102B 0000
+FA: 1040 0000
+FA: 1040 0000 [0200]
+F9: 0000 0000
+V0: 0000 0000 [0001]
+00: 0000 0000
+BP: 2400 0041 [0000]
+G0: 1190 0000
+EC: 0000 0000 [1000]
+T0: 0000 028A [010F]
+Jump to BL
+```
+
+Fused BootROM with unsigned BL2:
+
+> `V0: 100C`, `INVALID_SIG_TYPE`\
+> `00: 1017`, `BL_VERIFY_FAILED`
+
+```text
+F0: 102B 0000
+FA: 1040 0000
+FA: 1040 0000 [0200]
+F9: 0000 0000
+V0: 100C 0000 [0001]
+00: 1017 0000
+F9: 0000 0000
+V0: 100C 0000 [0001]
+01: 102A 0001
+02: 1017 0000
+BP: 2000 02C0 [0001]
+EC: 0000 0000 [1000]
+T0: 0000 023C [000F]
+System halt!
+```
+
+Fused BootROM with signed BL2 but the wrong key:
+
+> `V0: 706D`, `KEY_MISMATCH`\
+> `00: 1017`, `BL_VERIFY_FAILED`
 
 ---
 
 ## Future updates and key rotation
+
+For routine updates within the signed profile, RAM-boot the signed recovery FIT, install the signed sysupgrade FIT,\
+and update the signed FIP before BL2 only when bootloader changes are required. Verify every NAND write before reset.
 
 For routine updates within the encrypted profile, RAM-boot the encrypted recovery FIT, install the encrypted sysupgrade FIT,\
 and update FIP before BL2 only when bootloader changes are required. Verify every NAND write before reset.
