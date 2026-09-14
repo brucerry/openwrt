@@ -127,6 +127,73 @@ Do not reuse them on MT7981, MT7986, or another SoC without its own official fie
 
 ---
 
+## MT7987/MT7988 eFuse command reference
+
+These tables reproduce the command mappings from the official MediaTek Secure Boot Provision Application Note.\
+They apply only to MT7987/MT7988. In every command, `r` means read while `w` permanently writes or blows OTP bits.
+
+The Linux examples use the executable installed by this build, `mtk-efuse-tool-mt7987`.\
+The official document abbreviates its name to `mtk-efuse-tool`; the command arguments are the same.
+
+### Linux/kernel-driver `mtk-efuse-tool` short forms
+
+This userspace command sends the semantic operations below to the kernel `mtk-efuse` netlink driver.
+
+| Short form | Read command arguments | Write command arguments | Function |
+| --- | --- | --- | --- |
+| `ph` | `ph r <PUBK_HASH_IDX> <HASH_ALGO>` | `ph w <PUBK_HASH_IDX> <PUBK_HASH_FILE>` | Read or write a BL2 public-key hash. |
+| `lh` | `lh r <PUBK_HASH_IDX> <HASH_ALGO>` | `lh w <PUBK_HASH_IDX> <HASH_ALGO>` | Read or permanently lock a public-key hash. |
+| `dh` | `dh r <PUBK_HASH_IDX>` | `dh w <PUBK_HASH_IDX>` | Read or permanently disable a public-key hash slot. |
+| `sa` | `sa r` | `sa w <ALGO_IDX>` | Read or permanently select the BootROM signature/hash algorithm. |
+| `dj` | `dj r` | `dj w` | Read or permanently disable JTAG. |
+| `es` | `es r` | `es w` | Read or permanently enable the BootROM secure-boot chain. |
+| `ea` | `ea r` | `ea w` | Read or permanently enable BootROM anti-rollback. |
+| `db` | `db r` | `db w` | Read or permanently disable the BootROM command interface. |
+| `ak` | `ak r` | `ak w <PLAT_KEY_BIN>` | Read or write the 16-byte platform key. |
+| `al` | `al r` | `al w` | Read or permanently lock platform-key writes. |
+
+Prefix each argument sequence with `mtk-efuse-tool-mt7987`, for example `mtk-efuse-tool-mt7987 sa r`.\
+The index and algorithm parameters have these meanings:
+
+| Parameter | Value | Meaning |
+| --- | --- | --- |
+| `PUBK_HASH_IDX` | `0` | First SHA-256 hash slot; the only valid logical slot for SHA-384. |
+| `PUBK_HASH_IDX` | `1` | Second SHA-256 hash slot. |
+| `HASH_ALGO` | `0` | SHA-256 public-key hash. |
+| `HASH_ALGO` | `1` | SHA-384 public-key hash. |
+| `ALGO_IDX` | `0` | RSA-2048 with SHA-256. |
+| `ALGO_IDX` | `1` | RSA-3072 with SHA-256. |
+| `ALGO_IDX` | `2` | RSA-3072 with SHA-384. |
+
+### U-Boot `efuse` raw field indexes
+
+U-Boot accepts `efuse read <index>` and `efuse write <index> <hex-data>`.\
+Unlike the Linux tool, this raw interface does not group related fields or accept a key file.
+
+| Index | Field | Write data | Linux short-form equivalent |
+| ---: | --- | --- | --- |
+| `8` | Public-key hash 0; first 32 bytes of the SHA-384 hash | Hash bytes in hexadecimal | `ph` for slot 0 |
+| `9` | Public-key hash 1; last 16 bytes plus padding for SHA-384 | Hash bytes in hexadecimal | `ph` for slot 1, or the remainder of SHA-384 slot 0 |
+| `16` | Public-key hash 0 lock; first 32-byte lock for SHA-384 | `1` | `lh` for slot 0 |
+| `17` | Public-key hash 1 lock for its first 16 bytes; last 16-byte lock for SHA-384 | `1` | Part of `lh` for slot 1, or SHA-384 slot 0 |
+| `18` | Public-key hash 1 lock for its last 16 bytes | `1` | Part of `lh` for SHA-256 slot 1 |
+| `21` | Disable public-key hash 0 | `1` | `dh w 0` |
+| `24` | BootROM security algorithm | `0`, `1`, or `2` from `ALGO_IDX` above | `sa` |
+| `25` | Disable JTAG | `1` | `dj` |
+| `26` | Enable the BootROM secure-boot chain | `1` | `es` |
+| `27` | Enable BootROM anti-rollback | `1` | `ea` |
+| `33` | Disable the BootROM command interface | `1` | `db` |
+| `37` | 16-byte platform-key value | 32 hexadecimal digits | `ak` |
+| `38` | Lock platform-key writes | `1` | `al` |
+
+For RSA-3072/SHA-384, the 48-byte hash and its locks span fields `8`, `9`, `16`, and `17`.\
+For SHA-256 slot 1, both lock fields `17` and `18` must be blown. Do not hand-compose the padded field-9 SHA-384 value without following the official provisioning procedure.
+
+Every field listed above is security-sensitive OTP state, not a configuration setting.\
+Use read commands while inspecting a device, and execute each write only at its corresponding cold-boot gate in this procedure.
+
+---
+
 ## Step 1: Install signed images
 
 The signed profile provides authentication without firmware encryption and does not require a platform key.\
