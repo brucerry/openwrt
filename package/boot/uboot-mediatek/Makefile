@@ -40,6 +40,7 @@ define U-Boot/Default
   TFA_TBB:=
   TFA_TBB_VARIANT:=
   TFA_TBB_PLAT:=
+  TFA_FIP_ENC:=
   FIT_KEY_DIR:=
   FIT_KEY_NAME:=
   FIT_KEY_ALG:=
@@ -667,11 +668,34 @@ define U-Boot/mt7987_emplus_ehr330
   FIT_KEY_ALG:=sha256,rsa2048
 endef
 
+define U-Boot/mt7987_emplus_ehr330_encrypted
+  NAME:=Emplus EHR330 (signed and encrypted firmware)
+  BUILD_SUBTARGET:=filogic
+  BUILD_DEVICES:=emplus_ehr330_encrypted
+  UBOOT_CONFIG:=mt7987a_emplus_ehr330_encrypted
+  UBOOT_MTK_FW_ENC_BASE_CONFIG:=mt7987a_emplus_ehr330
+  UBOOT_EHR330_ENV_IMAGE_PROFILE:=emplus_ehr330-encrypted
+  UBOOT_IMAGE:=u-boot.fip
+  BL2_BOOTDEV:=ehr330-encrypted
+  BL2_SOC:=mt7987
+  DEPENDS:=+trusted-firmware-a-mt7987-ehr330-encrypted
+  TFA_TBB:=1
+  TFA_TBB_VARIANT:=mt7987-ehr330-encrypted
+  TFA_TBB_PLAT:=mt7987
+  TFA_FIP_ENC:=1
+  UBOOT_MTK_FW_ENC:=1
+  UBOOT_MTK_FW_ENC_BACKEND:=BL31
+  FIT_KEY_DIR:=$(TOPDIR)/keys/mtk-secure-boot
+  FIT_KEY_NAME:=fit_key
+  FIT_KEY_ALG:=sha256,rsa2048
+endef
+
 define U-Boot/mt7987_emplus_ehr330_unsigned
   NAME:=Emplus EHR330 (unsigned)
   BUILD_SUBTARGET:=filogic
   BUILD_DEVICES:=emplus_ehr330_unsigned
   UBOOT_CONFIG:=mt7987a_emplus_ehr330
+  UBOOT_EHR330_ENV_IMAGE_PROFILE:=emplus_ehr330_unsigned
   UBOOT_IMAGE:=u-boot.fip
   BL2_BOOTDEV:=spim-nand0
   BL2_SOC:=mt7987
@@ -1449,6 +1473,7 @@ UBOOT_TARGETS := \
 	mt7987_bananapi_bpi-r4-lite-snand \
 	mt7987_bananapi_bpi-r4-lite-nor \
   mt7987_emplus_ehr330 \
+  mt7987_emplus_ehr330_encrypted \
   mt7987_emplus_ehr330_unsigned \
 	mt7987_rfb-emmc \
 	mt7987_rfb-sd \
@@ -1468,13 +1493,20 @@ UBOOT_TARGETS := \
 	mt7988_rfb-emmc \
 	mt7988_rfb-sd
 
-UBOOT_CUSTOMIZE_CONFIG := \
+UBOOT_CUSTOMIZE_CONFIG = \
 	--disable TOOLS_KWBIMAGE \
-	--disable TOOLS_LIBCRYPTO \
+  $(if $(UBOOT_MTK_FW_ENC),--enable TOOLS_LIBCRYPTO,--disable TOOLS_LIBCRYPTO) \
 	--disable TOOLS_MKEFICAPSULE
 
 ifdef CONFIG_TARGET_mediatek
 UBOOT_MAKE_FLAGS += $(UBOOT_IMAGE:.fip=.bin)
+
+define Build/Prepare
+	$(call Build/Prepare/Default)
+	$(CP) $(CURDIR)/files/mtk-fw-encryption/. $(PKG_BUILD_DIR)/
+	[ -z "$(UBOOT_MTK_FW_ENC)" ] || { cp $(PKG_BUILD_DIR)/configs/$(UBOOT_MTK_FW_ENC_BASE_CONFIG)_defconfig $(PKG_BUILD_DIR)/configs/$(UBOOT_CONFIG)_defconfig; cat $(PKG_BUILD_DIR)/mtk-fw-encryption.config >> $(PKG_BUILD_DIR)/configs/$(UBOOT_CONFIG)_defconfig; }
+	[ -z "$(UBOOT_EHR330_ENV_IMAGE_PROFILE)" ] || sed -i 's/emplus_ehr330-signed/$(UBOOT_EHR330_ENV_IMAGE_PROFILE)/g' $(PKG_BUILD_DIR)/defenvs/emplus_ehr330_env
+endef
 endif
 
 TFA_TBB_DIR = $(firstword $(wildcard $(BUILD_DIR)/arm-trusted-firmware-mediatek-$(TFA_TBB_VARIANT)/arm-trusted-firmware-mediatek-* ))
@@ -1498,6 +1530,8 @@ define Build/tbb-fip-image
     $(TFA_TBB_RELEASE)/soc_fw_content.crt \
     $(TFA_TBB_RELEASE)/nt_fw_key.crt \
     $(TFA_TBB_RELEASE)/nt_fw_content.crt && \
+  $(if $(TFA_FIP_ENC),$(MAKE) -C $(TFA_TBB_DIR)/tools/encrypt_fw \
+    BUILD_PLAT=$(TFA_TBB_RELEASE) OPENSSL_DIR=/usr DEBUG=0 all &&) \
   $(MAKE) -C $(TFA_TBB_DIR) \
     PLAT=$(TFA_TBB_PLAT) BUILD_BASE=$(TFA_TBB_DIR)/build DEBUG=0 \
     TRUSTED_BOARD_BOOT=1 GENERATE_COT=1 E=0 \
@@ -1507,6 +1541,13 @@ define Build/tbb-fip-image
     NON_TRUSTED_WORLD_KEY=$(TOPDIR)/keys/mtk-secure-boot/non_trusted_private_key.pem \
     BL31_KEY=$(TOPDIR)/keys/mtk-secure-boot/soc_fw_private_key.pem \
     BL33_KEY=$(TOPDIR)/keys/mtk-secure-boot/nt_fw_private_key.pem \
+    $(if $(TFA_FIP_ENC),FIP_ENC=1 ENCRYPT_BL31=1 ENCRYPT_BL33=1 \
+      DECRYPTION_SUPPORT=aes_gcm \
+      ENCTOOL=$(TFA_TBB_RELEASE)/tools/encrypt_fw/encrypt_fw \
+      ENC_KEY_PATH=$(TOPDIR)/keys/mtk-secure-boot/platform_key.bin \
+      ENC_NONCE_PATH=$(TOPDIR)/keys/mtk-secure-boot/fip_nonce.bin \
+      ROE_KEY_SALT=$(TOPDIR)/keys/mtk-secure-boot/roe_salt.bin \
+      FIP_KEY_SALT=$(TOPDIR)/keys/mtk-secure-boot/fip_salt.bin) \
     BL31=$(TFA_TBB_RELEASE)/bl31.bin \
     BL33=$(PKG_BUILD_DIR)/u-boot.bin fip && \
   $(STAGING_DIR_HOST)/bin/fiptool info $(TFA_TBB_RELEASE)/fip.bin > $(PKG_BUILD_DIR)/fip.info && \
@@ -1531,7 +1572,7 @@ endif
 
 define Build/Configure
 	$(call Build/Configure/U-Boot)
-	sed -i 's/CONFIG_TOOLS_LIBCRYPTO=y/# CONFIG_TOOLS_LIBCRYPTO is not set/' $(PKG_BUILD_DIR)/.config
+	[ -n "$(UBOOT_MTK_FW_ENC)" ] || sed -i 's/CONFIG_TOOLS_LIBCRYPTO=y/# CONFIG_TOOLS_LIBCRYPTO is not set/' $(PKG_BUILD_DIR)/.config
 endef
 
 
@@ -1597,6 +1638,7 @@ endif
 define Build/InstallDev
 	$(INSTALL_DIR) $(STAGING_DIR_IMAGE)
 	$(INSTALL_DATA) $(PKG_BUILD_DIR)/$(UBOOT_IMAGE) $(STAGING_DIR_IMAGE)/$(BUILD_VARIANT)-$(UBOOT_IMAGE)
+	[ -z "$(UBOOT_MTK_FW_ENC)" ] || { $(INSTALL_DIR) $(STAGING_DIR_HOST)/bin; $(INSTALL_BIN) $(PKG_BUILD_DIR)/tools/mkimage $(STAGING_DIR_HOST)/bin/mkimage-mtk-fw-encrypted; }
 endef
 
 $(eval $(call BuildPackage/U-Boot))
