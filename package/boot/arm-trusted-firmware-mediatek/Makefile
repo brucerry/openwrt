@@ -46,6 +46,10 @@ define Build/Prepare
 ifneq ($(strip $(TFA_TRUSTED_BOARD_BOOT)),)
 	$(TAR) -C $(PKG_BUILD_DIR) -xf $(DL_DIR)/$(MBEDTLS_TFA_SOURCE)
 endif
+ifneq ($(strip $(TFA_ENCRYPTION_OVERLAY)),)
+	echo "$(TFA_PLATFORM_KEY_LIB_HASH)  $(CURDIR)/files/$(TFA_ENCRYPTION_OVERLAY)/$(TFA_PLATFORM_KEY_LIB)" | sha256sum -c -
+	$(CP) $(CURDIR)/files/$(TFA_ENCRYPTION_OVERLAY)/. $(PKG_BUILD_DIR)/
+endif
 endef
 
 define Trusted-Firmware-A/Default
@@ -82,6 +86,18 @@ define Trusted-Firmware-A/Default
   TFA_KEY_ALG:=
   TFA_HASH_ALG:=
   TFA_E:=
+  TFA_ENCRYPTION_OVERLAY:=
+  TFA_PLATFORM_KEY_LIB:=
+  TFA_PLATFORM_KEY_LIB_HASH:=
+  TFA_FIP_ENC:=
+  TFA_FW_ENC:=
+  TFA_FW_ENC_VIA_BL31:=
+  TFA_ENC_KEY_PATH:=
+  TFA_ENC_NONCE_PATH:=
+  TFA_ROE_KEY_SALT:=
+  TFA_FIP_KEY_SALT:=
+  TFA_KERNEL_KEY_SALT:=
+  TFA_ROOTFS_KEY_SALT:=
 endef
 
 define Trusted-Firmware-A/mt7622-nor-1ddr
@@ -547,6 +563,27 @@ define Trusted-Firmware-A/mt7987-ehr330
   TFA_TRUSTED_BOARD_BOOT:=1
 endef
 
+define Trusted-Firmware-A/mt7987-ehr330-encrypted
+  NAME:=Emplus EHR330 (SPI-NAND via SPIM, secure boot, encrypted FIP)
+  BOOT_DEVICE:=spim-nand
+  BUILD_SUBTARGET:=filogic
+  PLAT:=mt7987
+  SPIM_CTRL:=0
+  TFA_TRUSTED_BOARD_BOOT:=1
+  TFA_ENCRYPTION_OVERLAY:=mt7987-encrypted
+  TFA_PLATFORM_KEY_LIB:=plat/mediatek/apsoc_common/img_dec/roe/release/mtk_plat_key.a
+  TFA_PLATFORM_KEY_LIB_HASH:=ca19175ab382621d7b60c86a0b594d1f3d828e4e0e3ef8b856d55293747c41f7
+  TFA_FIP_ENC:=1
+  TFA_FW_ENC:=1
+  TFA_FW_ENC_VIA_BL31:=1
+  TFA_ENC_KEY_PATH:=$(TOPDIR)/keys/mtk-secure-boot/platform_key.bin
+  TFA_ENC_NONCE_PATH:=$(TOPDIR)/keys/mtk-secure-boot/fip_nonce.bin
+  TFA_ROE_KEY_SALT:=$(TOPDIR)/keys/mtk-secure-boot/roe_salt.bin
+  TFA_FIP_KEY_SALT:=$(TOPDIR)/keys/mtk-secure-boot/fip_salt.bin
+  TFA_KERNEL_KEY_SALT:=$(TOPDIR)/keys/mtk-secure-boot/kernel_salt.bin
+  TFA_ROOTFS_KEY_SALT:=$(TOPDIR)/keys/mtk-secure-boot/rootfs_salt.bin
+endef
+
 define Trusted-Firmware-A/mt7987-spim-nand0-ubi-comb
   NAME:=MediaTek MT7987 (SPI-NAND via SPIM, UBI)
   BOOT_DEVICE:=spim-nand
@@ -798,6 +835,7 @@ TFA_TARGETS:= \
 	mt7987-sdmmc-ddr4-4bg \
 	mt7987-spim-nand0 \
   mt7987-ehr330 \
+  mt7987-ehr330-encrypted \
 	mt7987-spim-nand0-ubi-comb \
 	mt7987-spim-nand2-ubi-comb \
 	mt7987-ram-comb \
@@ -852,9 +890,21 @@ TFA_EMPLUS_SECURE_FLAGS = \
 	BL33_KEY=$(TOPDIR)/keys/mtk-secure-boot/nt_fw_private_key.pem \
 	MBEDTLS_DIR=$(PKG_BUILD_DIR)/$(MBEDTLS_TFA_NAME)-$(MBEDTLS_TFA_RELEASE)
 
+TFA_MTK_ENCRYPTION_FLAGS = \
+  $(if $(TFA_FIP_ENC),FIP_ENC=1 ENCRYPT_BL31=1 ENCRYPT_BL33=1) \
+  $(if $(TFA_FW_ENC),FW_ENC=1) \
+  $(if $(TFA_FW_ENC_VIA_BL31),FW_ENC_VIA_BL31=1) \
+  DECRYPTION_SUPPORT=aes_gcm \
+  ENC_KEY_PATH=$(TFA_ENC_KEY_PATH) \
+  $(if $(TFA_ENC_NONCE_PATH),ENC_NONCE_PATH=$(TFA_ENC_NONCE_PATH)) \
+  ROE_KEY_SALT=$(TFA_ROE_KEY_SALT) \
+  $(if $(TFA_FIP_KEY_SALT),FIP_KEY_SALT=$(TFA_FIP_KEY_SALT)) \
+  $(if $(TFA_KERNEL_KEY_SALT),KERNEL_KEY_SALT=$(TFA_KERNEL_KEY_SALT)) \
+  $(if $(TFA_ROOTFS_KEY_SALT),ROOTFS_KEY_SALT=$(TFA_ROOTFS_KEY_SALT))
+
 TFA_MAKE_FLAGS += \
 	BOOT_DEVICE=$(BOOT_DEVICE) \
-  $(if $(filter mt7981-dam-ap410-ddr4 mt7987-ehr330,$(BUILD_VARIANT)),,USE_MKIMAGE=1 MKIMAGE=$(STAGING_DIR_HOST)/bin/mkimage) \
+  $(if $(filter mt7981-dam-ap410-ddr4 mt7987-ehr330 mt7987-ehr330-encrypted,$(BUILD_VARIANT)),,USE_MKIMAGE=1 MKIMAGE=$(STAGING_DIR_HOST)/bin/mkimage) \
 	$(if $(findstring ddr4,$(DDR_TYPE)),DRAM_USE_DDR4=1) \
 	$(if $(BOARD_QFN),BOARD_QFN=1,BOARD_BGA=1) \
 	$(if $(NAND_TYPE),NAND_TYPE=$(NAND_TYPE)) \
@@ -887,7 +937,8 @@ TFA_MAKE_FLAGS += \
 		$(if $(TFA_KEY_ALG),KEY_ALG=$(TFA_KEY_ALG)) \
 		$(if $(TFA_HASH_ALG),HASH_ALG=$(TFA_HASH_ALG)) \
 		$(if $(TFA_E),E=$(TFA_E),$(if $(TFA_TRUSTED_BOARD_BOOT),E=0)) \
-    $(if $(filter mt7981-dam-ap410-ddr4 mt7987-ehr330,$(BUILD_VARIANT)),$(TFA_EMPLUS_SECURE_FLAGS)) \
+    $(if $(filter mt7981-dam-ap410-ddr4 mt7987-ehr330 mt7987-ehr330-encrypted,$(BUILD_VARIANT)),$(TFA_EMPLUS_SECURE_FLAGS)) \
+    $(if $(TFA_ENCRYPTION_OVERLAY),$(TFA_MTK_ENCRYPTION_FLAGS)) \
 		$(if $(RAM_BOOT_UART_DL),bl2,all)
 
 define Package/trusted-firmware-a-ram/install
@@ -916,5 +967,6 @@ define Package/trusted-firmware-a-mt7981-dam-ap410-ddr4/install
 endef
 
 Package/trusted-firmware-a-mt7987-ehr330/install = $(Package/trusted-firmware-a-mt7981-dam-ap410-ddr4/install)
+Package/trusted-firmware-a-mt7987-ehr330-encrypted/install = $(Package/trusted-firmware-a-mt7981-dam-ap410-ddr4/install)
 
 $(eval $(call BuildPackage/Trusted-Firmware-A))

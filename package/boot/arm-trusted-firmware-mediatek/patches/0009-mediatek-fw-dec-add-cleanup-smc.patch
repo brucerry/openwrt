@@ -1,0 +1,30 @@
+From: OpenWrt EHR330 support <openwrt-devel@lists.openwrt.org>
+Subject: [PATCH] mediatek: fw-dec: add key cleanup SMC
+
+Allow U-Boot to erase derived firmware keys from BL31 before entering Linux.
+
+--- a/plat/mediatek/apsoc_common/bl31/apsoc_sip_svc_common.h
++++ b/plat/mediatek/apsoc_common/bl31/apsoc_sip_svc_common.h
+@@ -203,1 +203,2 @@
+ #define MTK_SIP_FW_DEC_IMAGE			0xC2000582
++#define MTK_SIP_FW_DEC_CLEANUP			0xC2000584
+--- a/plat/mediatek/apsoc_common/bl31/apsoc_sip_svc_common.c
++++ b/plat/mediatek/apsoc_common/bl31/apsoc_sip_svc_common.c
+@@ -241,3 +241,14 @@ static uintptr_t apsoc_sip_fw_dec_image(
+ 	SMC_RET1(handle, ret);
+ }
++
++static uintptr_t apsoc_sip_fw_dec_cleanup(uint32_t smc_fid, u_register_t x1,
++					  u_register_t x2, u_register_t x3,
++					  u_register_t x4, void *cookie,
++					  void *handle, u_register_t flags)
++{
++	int ret;
++
++	ret = fw_dec_cleanup();
++	SMC_RET1(handle, ret);
++}
+ #endif /* MTK_FW_ENC_VIA_BL31 */
+@@ -278,1 +289,2 @@ struct mtk_sip_call_record apsoc_common_sip_calls[] = {
+ 	MTK_SIP_CALL_RECORD(MTK_SIP_FW_DEC_IMAGE, apsoc_sip_fw_dec_image),
++	MTK_SIP_CALL_RECORD(MTK_SIP_FW_DEC_CLEANUP, apsoc_sip_fw_dec_cleanup),
