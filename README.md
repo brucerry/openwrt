@@ -95,37 +95,10 @@ Likewise, an encrypted FIP requires the matching encryption-aware BL2 and the ex
 
 | Current firmware/eFuse state | Direct encrypted transition | Conditions |
 | --- | --- | --- |
-| Unsigned vendor firmware | **No supported direct path** | Its NMBM partition geometry matches this tree, but its update format, BL31 eFuse service, and FIT decryption support are not established. First RAM-boot this tree's unsigned recovery and validate the migration path below. |
 | This tree's unsigned firmware | **Yes, staged** | `ak r` must work, the exact platform key must be programmed first, and the complete encrypted FIT/FIP/BL2 set must be installed before booting it. |
 | This tree's signed firmware | **Yes, staged** | Same requirements as unsigned; the encrypted BL2/FIP/FIT must also use the approved signing keys. |
 | Signed firmware with BL2 public-key hash fused | **Yes, conditionally** | The encrypted BL2 signing-key hash must match the active eFuse slot. If `es` is blown, BootROM rejects any mismatch. A fused hash alone does not enforce verification until secure boot is enabled. |
 | Signed firmware with matching BL2 hash and platform key fused | **Yes; intended final state** | The platform key must match the build byte-for-byte. If its write lock is blown, a mismatch cannot be repaired and the encrypted chain cannot boot. |
-
-### Vendor migration probe
-
-The captured vendor firmware uses the same BL2, environment, Factory, FIP, `ubi`, and `ubi_1` offsets and sizes as this tree.\
-It also provides TFTP, `iminfo`, and `bootm`, but its captured FIT boot verifies only CRC32/SHA1 and shows no RSA or decryption step.
-
-Before writing NAND, use vendor U-Boot to test this tree's unsigned recovery entirely from RAM:
-
-```text
-tftpboot ${loadaddr} openwrt-mediatek-filogic-emplus_ehr330_unsigned-initramfs-recovery.itb
-iminfo ${loadaddr}
-bootm ${loadaddr}
-```
-
-If recovery reaches Linux, use only read commands to confirm that the vendor BL31 accepts the eFuse SMC interface:
-
-```sh
-mtk-efuse-tool-mt7987 sa r
-mtk-efuse-tool-mt7987 es r
-mtk-efuse-tool-mt7987 ph r 0 0
-mtk-efuse-tool-mt7987 lh r 0 0
-mtk-efuse-tool-mt7987 al r
-```
-
-Stop if any read fails. A successful RAM boot and eFuse readback support migration to this tree's plain firmware;\
-they do not make vendor U-Boot capable of booting encrypted FITs or prove that vendor `mtkupgrade` accepts OpenWrt images.
 
 Do not mix profiles or builds. In particular, do not flash only an encrypted sysupgrade FIT under a plain U-Boot,\
 or only an encrypted FIP under a plain BL2. Preserve `Factory`, retain UART access, and keep a raw NAND/OOB backup and an external recovery method available.
@@ -137,8 +110,7 @@ or only an encrypted FIP under a plain BL2. Preserve `Factory`, retain UART acce
 The signed profile provides authentication without firmware encryption and does not require a platform key.\
 Do not run the platform-key `ak w` or `al w` commands when deploying signed-only firmware.
 
-This procedure starts from this tree's working unsigned or signed U-Boot.\
-When starting from vendor firmware, first complete the unsigned RAM-recovery probe above and migrate to this tree's plain bootloader; do not pass OpenWrt `.itb` files to the unverified vendor `mtkupgrade` command.
+This procedure assumes the device is already running this tree's working unsigned or signed U-Boot.
 
 At U-Boot, RAM-boot a recovery FIT that the **currently running** U-Boot can verify:
 
@@ -195,9 +167,9 @@ Platform-key state is irrelevant to signed-only images because no firmware decry
 Platform-key programming is irreversible because eFuse bits only move in one direction.\
 Use stable power and confirm the EHR330 hardware requirement that `AVDD18_VQPS` is tied to 1.8 V before any write.
 
-The encrypted build reads the platform key from `~/openwrt/keys/mtk-secure-boot/platform_key.bin` inside the `ubt26.04` container,\
-which is `/root/openwrt/keys/mtk-secure-boot/platform_key.bin`. Generate it with `./scripts/gen-mtk-secureboot-keys.sh --encryption`.\
-The official programming reference is `~/share/ubt26.04/MT798x Secure Boot Provision Application Note V1.2_for_Emplus.pdf`.
+The encrypted build reads `keys/mtk-secure-boot/platform_key.bin` relative to the repository root.\
+Generate it with `./scripts/gen-mtk-secureboot-keys.sh --encryption`.\
+The official programming reference is the workspace document `MT798x Secure Boot Provision Application Note V1.2_for_Emplus.pdf`.
 
 Do not confuse `platform_key.bin` with the proprietary `mtk_plat_key.a` build library.\
 There is no separate platform-key enable bit: `ak w` programs the key and makes it available for key derivation; `al w` permanently locks further writes and enables read protection after reset.
@@ -210,11 +182,10 @@ mtk-efuse-tool-mt7987 ak r
 mtk-efuse-tool-mt7987 al r
 ```
 
-On the build host, verify the key file length and transfer that exact file to the target as `/tmp/platform_key.bin` over a controlled network:
+From the repository root, verify the key file length and transfer that exact file to the target as `/tmp/platform_key.bin` over a controlled network:
 
 ```sh
-cd ~/openwrt
-KEY="$PWD/keys/mtk-secure-boot/platform_key.bin"
+KEY=keys/mtk-secure-boot/platform_key.bin
 test "$(stat -c %s "$KEY")" -eq 16
 sha256sum "$KEY"
 ```
@@ -245,8 +216,8 @@ The derived ROE/FIP/FIT keys are intentionally not readable at runtime; successf
 
 ## First encrypted installation
 
-This procedure starts from this tree's working unsigned or signed firmware.\
-Do not use it directly from vendor firmware, and do not continue unless platform-key provisioning above has succeeded.
+This procedure assumes the device is already running this tree's working unsigned or signed firmware.\
+Do not continue unless platform-key provisioning above has succeeded.
 
 1. On the host, inspect and hash the complete encrypted artifact set.\
    If the device already has a BL2 key hash fused, compare the encrypted `*.bl2.img.signkeyhash` byte-for-byte with the active eFuse slot.
