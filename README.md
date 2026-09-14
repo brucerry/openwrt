@@ -105,7 +105,26 @@ or only an encrypted FIP under a plain BL2. Preserve `Factory`, retain UART acce
 
 ---
 
-## Signed installation and updates
+## Safe provisioning order
+
+The order matters. Never install encrypted firmware before programming its exact platform key,\
+and never lock either key field or enable BootROM secure boot until the preceding cold-boot gate passes.
+
+For an encrypted production device, complete the numbered sections in order:
+
+1. Install the complete signed image set and validate repeated cold boots.
+2. Program and read back the platform key, but leave its write lock unblown.
+3. Install the complete encrypted FIT/FIP/BL2 set without locking any eFuse field.
+4. Validate repeated encrypted cold boots through Linux.
+5. Lock the platform key, fully remove power, and validate encrypted boot again.
+6. Program and lock the installed BL2 signing-key hash, then enable BootROM secure boot last and validate the final chain.
+
+Stop immediately if any transfer, readback, verification, or cold boot fails. Do not advance to the next irreversible step.\
+For a signed-only production device, complete step 1, skip the platform-key and encryption sections, then continue at step 6.
+
+---
+
+## Step 1: Install signed images
 
 The signed profile provides authentication without firmware encryption and does not require a platform key.\
 Do not run the platform-key `ak w` or `al w` commands when deploying signed-only firmware.
@@ -162,9 +181,9 @@ Platform-key state is irrelevant to signed-only images because no firmware decry
 
 ---
 
-## Provision the platform key
+## Step 2: Write the platform key
 
-Platform-key programming is irreversible because eFuse bits only move in one direction.\
+Treat the platform-key write itself as irreversible because eFuse bits only move in one direction; an unblown write lock does not make a bad key replaceable.\
 Use stable power and confirm the EHR330 hardware requirement that `AVDD18_VQPS` is tied to 1.8 V before any write.
 
 The encrypted build reads `keys/mtk-secure-boot/platform_key.bin` relative to the repository root.\
@@ -172,7 +191,8 @@ Generate it with `./scripts/gen-mtk-secureboot-keys.sh --encryption`.\
 The official programming reference is the workspace document `MT798x Secure Boot Provision Application Note V1.2_for_Emplus.pdf`.
 
 Do not confuse `platform_key.bin` with the proprietary `mtk_plat_key.a` build library.\
-There is no separate platform-key enable bit: `ak w` programs the key and makes it available for key derivation; `al w` permanently locks further writes and enables read protection after reset.
+There is no separate platform-key enable bit: `ak w` programs the key and makes it available for key derivation.\
+The later `al w` step permanently locks further writes and enables read protection after reset.
 
 The target must be running this tree's MediaTek eFuse tool and a compatible BL31 eFuse service.\
 Stop if either read command fails, if the platform-key field is not all zero, or if its write lock is already blown:
@@ -200,21 +220,11 @@ mtk-efuse-tool-mt7987 ak r
 ```
 
 The readback contains secret material before lock. Compare it locally and do not capture, publish, or paste it into build logs.\
-Do **not** run `al w` yet. First install and cold-boot the complete encrypted image set repeatedly.
-
-After repeated encrypted cold boots pass, permanently lock platform-key writes and verify the lock:
-
-```sh
-mtk-efuse-tool-mt7987 al w
-mtk-efuse-tool-mt7987 al r
-```
-
-Fully remove power, boot again, and confirm `ak r` no longer exposes the platform key to the normal world.\
-The derived ROE/FIP/FIT keys are intentionally not readable at runtime; successful decryption and boot are their functional verification.
+Do **not** run `al w` yet. Continue directly to step 3 and prove that this exact key decrypts the complete encrypted image set.
 
 ---
 
-## First encrypted installation
+## Step 3: Install encrypted images
 
 This procedure assumes the device is already running this tree's working unsigned or signed firmware.\
 Do not continue unless platform-key provisioning above has succeeded.
@@ -272,7 +282,7 @@ Both verification commands must report a successful byte comparison before `rese
 
 ---
 
-## Runtime verification
+## Step 4: Verify encrypted runtime
 
 Capture repeated cold boots over UART. An encrypted boot must reach each stage without authentication or decryption errors:
 
@@ -301,14 +311,32 @@ mtk-efuse-tool-mt7987 al r
 mtk-efuse-tool-mt7987 ak r
 ```
 
-For the final production state, require RSA-2048/SHA-256, the approved BL2 hash in the active locked slot,\
-secure boot reported as blown, the platform-key write lock reported as blown, and no platform-key exposure after a cold reset.
+Before locking any eFuse, require repeated successful cold boots through Linux with no authentication or decryption errors.\
+Keep UART and the external recovery method available for the remaining provisioning steps.
 
 ---
 
-## Enable BootROM secure boot
+## Step 5: Lock the platform key
 
-Do this only after the exact signed or encrypted BL2/FIP/FIT set has passed repeated cold boots.\
+Only after step 4 passes, permanently lock platform-key writes and verify the lock:
+
+```sh
+mtk-efuse-tool-mt7987 al w
+mtk-efuse-tool-mt7987 al r
+```
+
+Fully remove power and require another successful encrypted boot through Linux. Then confirm that `ak r` no longer exposes the platform key to the normal world.\
+The derived ROE/FIP/FIT keys are intentionally not readable at runtime; successful decryption and boot are their functional verification.
+
+Stop if the lock state, read protection, or encrypted cold boot is not exactly as expected.\
+Do not program the BL2 signing-key hash or enable BootROM secure boot on a device that fails this gate.
+
+---
+
+## Step 6: Enable BootROM secure boot
+
+For an encrypted deployment, do this only after steps 1 through 5 have passed.\
+For a signed-only deployment, do this only after the exact signed BL2/FIP/FIT set has passed repeated cold boots.\
 The commands below are specific to MT7987 tool and driver version 2.0; algorithm value `0` is SHA-256.
 
 Record the approved 32-byte BL2 signing-key hash on the host, then transfer that file to `/tmp/bl2.img.signkeyhash` on the EHR330.\
@@ -322,18 +350,23 @@ mtk-efuse-tool-mt7987 lh r 0 0
 mtk-efuse-tool-mt7987 dh r 0
 ```
 
-Program SHA-256 slot 0, verify every byte, cold-boot the full chain, then lock and verify the slot:
+Program SHA-256 slot 0 and verify every byte against the approved host hash:
 
 ```sh
 mtk-efuse-tool-mt7987 ph w 0 /tmp/bl2.img.signkeyhash
 mtk-efuse-tool-mt7987 ph r 0 0
+```
 
+Stop on any mismatch. Cold-boot the installed image set once more before permanently locking slot 0:
+
+```sh
 mtk-efuse-tool-mt7987 lh w 0 0
 mtk-efuse-tool-mt7987 lh r 0 0
 mtk-efuse-tool-mt7987 ph r 0 0
 ```
 
-Only after another successful cold boot, enable BootROM enforcement and verify it:
+Only after the locked slot and another cold boot are verified, enable BootROM enforcement and verify it:\
+This is the final irreversible provisioning command.
 
 ```sh
 mtk-efuse-tool-mt7987 es w
@@ -341,6 +374,8 @@ mtk-efuse-tool-mt7987 es r
 ```
 
 Fully remove power and require a clean boot through the selected signed or encrypted Linux image.\
+For both profiles, require RSA-2048/SHA-256, the approved BL2 hash in locked slot 0, and secure boot reported as blown.\
+For the encrypted profile, additionally require the platform-key write lock to be blown and `ak r` not to expose the key after the cold reset.\
 Do not program `dh`, `ea`, `db`, `dj`, or slot 1 as part of this procedure.
 
 ### BootROM UART comparison
