@@ -192,6 +192,17 @@ For SHA-256 slot 1, both lock fields `17` and `18` must be blown. Do not hand-co
 Every field listed above is security-sensitive OTP state, not a configuration setting.\
 Use read commands while inspecting a device, and execute each write only at its corresponding cold-boot gate in this procedure.
 
+Both interfaces reach the same BL31 eFuse service and modify the same physical OTP fields.\
+Choose one provisioning interface for a device and execute only that interface's write block at each step:
+
+| Interface | Prefer it when | Input behavior |
+| --- | --- | --- |
+| U-Boot `efuse` | Linux is unavailable, or provisioning is performed from a controlled recovery/UART session. | Uses raw field indexes and hexadecimal values; the operator must handle field grouping and byte order. |
+| Linux `mtk-efuse-tool-mt7987` | The validated signed or encrypted Linux system boots and the eFuse tool and driver are available. | Uses semantic commands and key/hash files; it handles the MT7987 field grouping. |
+
+The paired command blocks below are alternatives, not a sequence. Never run both write blocks for the same field.\
+Read-only checks may be repeated through either interface, provided the field is still readable.
+
 ---
 
 ## Step 1: Install signed images
@@ -258,38 +269,62 @@ Use stable power and confirm the EHR330 hardware requirement that `AVDD18_VQPS` 
 
 The encrypted build reads `keys/mtk-secure-boot/platform_key.bin` relative to the repository root.\
 Generate it with `./scripts/gen-mtk-secureboot-keys.sh --encryption`.\
-The official programming reference is the workspace document `MT798x Secure Boot Provision Application Note V1.2_for_Emplus.pdf`.
 
 Do not confuse `platform_key.bin` with the proprietary `mtk_plat_key.a` build library.\
-There is no separate platform-key enable bit: `efuse write 37` programs the key and makes it available for key derivation.\
-The later `efuse write 38 1` step permanently locks further writes and enables read protection after reset.
+There is no separate platform-key enable bit: writing field 37, or `ak w`, programs the key and makes it available for key derivation.\
+The later field-38 or `al w` step permanently locks further writes and enables read protection after reset.
 
-The target must be running this tree's U-Boot and a compatible BL31 eFuse service.\
-Stop if either read command fails, if the platform-key field is not all zero, or if its write lock is already blown:
+The target must be running a compatible BL31 eFuse service.\
+Choose one read block and stop if the platform-key field is not all zero, its write lock is already blown, or any command fails.
+
+**U-Boot pre-write check:**
 
 ```text
 efuse read 37
 efuse read 38
 ```
 
-From the repository root, verify the key file length and convert it to the 32 hexadecimal digits required by U-Boot:
+**Linux pre-write check:**
+
+```sh
+mtk-efuse-tool-mt7987 ak r
+mtk-efuse-tool-mt7987 al r
+```
+
+From the repository root, verify the source key file:
 
 ```sh
 KEY=keys/mtk-secure-boot/platform_key.bin
 test "$(stat -c %s "$KEY")" -eq 16
 sha256sum "$KEY"
-xxd -p -c 16 "$KEY"
 ```
 
-At U-Boot, replace the placeholder with that exact 32-digit value, program field 37 once, and read it back:
+Choose exactly one of the following write methods.
+
+**U-Boot method:** Convert the key to exactly 32 hexadecimal digits, then program and read back raw field 37:
+
+```sh
+xxd -p -c 16 "$KEY"
+```
 
 ```text
 efuse write 37 <PLATFORM_KEY_HEX>
 efuse read 37
 ```
 
-The command and readback contain secret material before lock. Disable UART capture, compare the value locally, and clear the terminal buffer afterward.\
-Do **not** write field 38 yet. Continue directly to step 3 and prove that this exact key decrypts the complete encrypted image set.
+**Linux method:** Transfer the same binary key to a temporary path on the target, verify its size and approved checksum there, then program and read it back:
+
+```sh
+KEY=/tmp/platform_key.bin
+test "$(stat -c %s "$KEY")" -eq 16
+sha256sum "$KEY"
+mtk-efuse-tool-mt7987 ak w "$KEY"
+mtk-efuse-tool-mt7987 ak r
+rm -f "$KEY"
+```
+
+The U-Boot command/readback and Linux `ak r` output contain secret material before lock. Disable UART or shell capture, compare locally, clear the terminal buffer, and remove the target copy afterward.\
+Do **not** write field 38 or run `al w` yet. Continue directly to step 3 and prove that this exact key decrypts the complete encrypted image set.
 
 ---
 
@@ -387,14 +422,25 @@ Keep UART and the external recovery method available for the remaining provision
 
 ## Step 5: Lock the platform key
 
-Only after step 4 passes, permanently lock platform-key writes and verify the lock:
+Only after step 4 passes, permanently lock platform-key writes.\
+Choose exactly one method; both write the same OTP lock.
+
+**U-Boot method:**
 
 ```text
 efuse write 38 1
 efuse read 38
 ```
 
-Fully remove power and require another successful encrypted boot through Linux. Then interrupt U-Boot and confirm that `efuse read 37` no longer exposes the platform key.\
+**Linux method:**
+
+```sh
+mtk-efuse-tool-mt7987 al w
+mtk-efuse-tool-mt7987 al r
+```
+
+Fully remove power and require another successful encrypted boot through Linux.\
+Then confirm through either `efuse read 37` in U-Boot or `mtk-efuse-tool-mt7987 ak r` in Linux that the platform key is no longer exposed.\
 The derived ROE/FIP/FIT keys are intentionally not readable at runtime; successful decryption and boot are their functional verification.
 
 Stop if the lock state, read protection, or encrypted cold boot is not exactly as expected.\
@@ -406,19 +452,20 @@ Do not program the BL2 signing-key hash or enable BootROM secure boot on a devic
 
 For an encrypted deployment, do this only after steps 1 through 5 have passed.\
 For a signed-only deployment, do this only after the exact signed BL2/FIP/FIT set has passed repeated cold boots.\
-The commands below use the MT7987/MT7988 U-Boot field map and the EHR330 RSA-2048/SHA-256 configuration.
+The alternatives below use the MT7987/MT7988 mappings and the EHR330 RSA-2048/SHA-256 configuration.
 
-From the repository root, verify the installed profile's 32-byte BL2 signing-key hash and convert it to hexadecimal without changing its byte order:
+From the repository root, verify the installed profile's 32-byte BL2 signing-key hash:
 
 ```sh
 HASH=bin/targets/mediatek/filogic/openwrt-mediatek-filogic-emplus_ehr330-encrypted-bl2.img.signkeyhash
 test "$(stat -c %s "$HASH")" -eq 32
 sha256sum "$HASH"
-xxd -p -c 32 "$HASH"
 ```
 
-Use the `-signed-` hash instead for a signed-only deployment. At U-Boot, read the current state and stop unless algorithm field 24 is zero,\
-secure boot field 26 and slot-0 lock field 16 are unblown, public-key hash field 8 is all zeroes, and disable field 21 is unblown:
+Use the `-signed-` hash instead for a signed-only deployment.\
+Choose one pre-write read block and stop unless RSA-2048/SHA-256 is selected, secure boot and the slot-0 lock are unblown, slot 0 is all zeroes, and its disable field is unblown.
+
+**U-Boot pre-write check:**
 
 ```text
 efuse read 24
@@ -428,14 +475,44 @@ efuse read 16
 efuse read 21
 ```
 
-Replace the placeholder with the exact 64-digit hash, program SHA-256 slot 0, and verify every byte against the host value:
+**Linux pre-write check:**
+
+```sh
+mtk-efuse-tool-mt7987 sa r
+mtk-efuse-tool-mt7987 es r
+mtk-efuse-tool-mt7987 ph r 0 0
+mtk-efuse-tool-mt7987 lh r 0 0
+mtk-efuse-tool-mt7987 dh r 0
+```
+
+Choose exactly one method to program SHA-256 slot 0.
+
+**U-Boot method:** Convert the source hash without changing its byte order, replace the placeholder with the exact 64-digit result, and verify every byte after the write:
+
+```sh
+xxd -p -c 32 "$HASH"
+```
 
 ```text
 efuse write 8 <BL2_SIGNING_KEY_HASH_HEX>
 efuse read 8
 ```
 
-Stop on any mismatch. Cold-boot the installed image set once more before permanently locking slot 0:
+**Linux method:** Transfer the same binary hash file to the target, verify its size and approved checksum there, then write and read back logical SHA-256 slot 0:
+
+```sh
+HASH=/tmp/bl2.img.signkeyhash
+test "$(stat -c %s "$HASH")" -eq 32
+sha256sum "$HASH"
+mtk-efuse-tool-mt7987 ph w 0 "$HASH"
+mtk-efuse-tool-mt7987 ph r 0 0
+rm -f "$HASH"
+```
+
+Stop on any mismatch. Cold-boot the installed image set once more before permanently locking slot 0.\
+Choose exactly one lock method; both write the same OTP lock.
+
+**U-Boot lock method:**
 
 ```text
 efuse write 16 1
@@ -443,18 +520,35 @@ efuse read 16
 efuse read 8
 ```
 
+**Linux lock method:**
+
+```sh
+mtk-efuse-tool-mt7987 lh w 0 0
+mtk-efuse-tool-mt7987 lh r 0 0
+mtk-efuse-tool-mt7987 ph r 0 0
+```
+
 Only after the locked slot and another cold boot are verified, enable BootROM enforcement and verify it.\
-Writing field 26 is the final irreversible provisioning command:
+Choose exactly one enable method. This is the final irreversible provisioning command.
+
+**U-Boot enable method:**
 
 ```text
 efuse write 26 1
 efuse read 26
 ```
 
+**Linux enable method:**
+
+```sh
+mtk-efuse-tool-mt7987 es w
+mtk-efuse-tool-mt7987 es r
+```
+
 Fully remove power and require a clean boot through the selected signed or encrypted Linux image.\
 For both profiles, require RSA-2048/SHA-256, the approved BL2 hash in locked slot 0, and secure boot reported as blown.\
-For the encrypted profile, additionally require the platform-key write lock to be blown and `efuse read 37` not to expose the key after the cold reset.\
-Do not write U-Boot eFuse fields 21, 25, 27, 33, or public-key hash slot 1 as part of this procedure.
+For the encrypted profile, additionally require the platform-key write lock to be blown and neither `efuse read 37` nor `ak r` to expose the key after the cold reset.\
+Do not write U-Boot fields 21, 25, 27, or 33, run their Linux `dh`, `dj`, `ea`, or `db` write equivalents, or provision public-key hash slot 1 as part of this procedure.
 
 ### BootROM UART comparison
 
