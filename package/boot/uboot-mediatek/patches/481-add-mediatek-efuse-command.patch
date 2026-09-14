@@ -1,0 +1,495 @@
+diff --git a/arch/arm/mach-mediatek/Kconfig b/arch/arm/mach-mediatek/Kconfig
+index 4fa3943..df41dc4 100644
+--- a/arch/arm/mach-mediatek/Kconfig
++++ b/arch/arm/mach-mediatek/Kconfig
+@@ -165,6 +165,20 @@ config MTK_TZ_MOVABLE
+ 	select OF_SYSTEM_SETUP
+ 	bool
+ 
++config MTK_EFUSE
++	bool
++	depends on TARGET_MT7987 || TARGET_MT7988
++
++config MTK_EFUSE_CMD
++	bool "Enable MediaTek MT7987/MT7988 eFuse commands"
++	depends on TARGET_MT7987 || TARGET_MT7988
++	select MTK_EFUSE
++	help
++	  Enable the MediaTek "efuse read" and "efuse write" commands. The
++	  commands access eFuse fields through the secure firmware SMC service.
++	  Field indexes are platform-specific; this implementation is intended
++	  only for the MT7987 and MT7988 field map.
++
+ config RESET_BUTTON_LABEL
+ 	string "Button to trigger factory reset"
+ 	default "reset"
+diff --git a/board/mediatek/common/Makefile b/board/mediatek/common/Makefile
+new file mode 100644
+index 0000000..f2770ef
+--- /dev/null
++++ b/board/mediatek/common/Makefile
+@@ -0,0 +1,4 @@
++# SPDX-License-Identifier: GPL-2.0
++
++obj-$(CONFIG_MTK_EFUSE) += mtk_efuse.o
++obj-$(CONFIG_MTK_EFUSE_CMD) += cmd_efuse.o
+diff --git a/board/mediatek/common/cmd_efuse.c b/board/mediatek/common/cmd_efuse.c
+new file mode 100644
+index 0000000..7acc295
+--- /dev/null
++++ b/board/mediatek/common/cmd_efuse.c
+@@ -0,0 +1,145 @@
++// SPDX-License-Identifier: GPL-2.0
++/*
++ * Copyright (C) 2025 MediaTek Inc. All Rights Reserved.
++ *
++ * MTK eFuse read/write command
++ */
++
++#include <command.h>
++#include <errno.h>
++#include <hexdump.h>
++#include <malloc.h>
++#include <vsprintf.h>
++#include <string.h>
++#include "colored_print.h"
++#include "mtk_efuse.h"
++
++static int do_efuse_read(struct cmd_tbl *cmdtp, int flag, int argc,
++			 char *const argv[])
++{
++	int ret;
++	uint32_t len = 0;
++	unsigned long field = 0;
++	uint8_t *data;
++
++	if (argc < 2)
++		return CMD_RET_USAGE;
++
++	ret = strict_strtoul(argv[1], 10, &field);
++	if (ret) {
++		cprintln(ERROR, "*** Invalid field ***");
++		return CMD_RET_USAGE;
++	}
++
++	ret = mtk_efuse_get_len(field, &len);
++	if (ret)
++		return ret;
++
++	data = calloc(len, sizeof(uint8_t));
++	if (!data)
++		return -ENOMEM;
++
++	ret = mtk_efuse_read(field, data, len);
++	if (ret)
++		goto out;
++
++	print_hex_dump("", DUMP_PREFIX_OFFSET, 16, 1, data, len, false);
++
++out:
++	free(data);
++	return ret;
++}
++
++static int do_efuse_write(struct cmd_tbl *cmdtp, int flag, int argc,
++			  char *const argv[])
++{
++	int ret;
++	uint32_t len = 0;
++	unsigned long field = 0;
++	uint8_t *buf;
++	uint8_t *data;
++
++	if (argc < 3)
++		return CMD_RET_USAGE;
++
++	ret = strict_strtoul(argv[1], 10, &field);
++	if (ret) {
++		cprintln(ERROR, "*** Invalid field ***");
++		return CMD_RET_USAGE;
++	}
++
++	ret = mtk_efuse_get_len(field, &len);
++	if (ret)
++		return ret;
++
++	data = calloc(len, sizeof(uint8_t));
++	if (!data)
++		return -ENOMEM;
++
++	if (strlen(argv[2]) == len * 2) {
++		ret = hex2bin(data, argv[2], len);
++		if (ret) {
++			cprintln(ERROR, "*** Cannot convert hexstring to binary ***");
++			goto out;
++		}
++	} else if (strlen(argv[2]) + 1 == len * 2) {
++		/* odd */
++		buf = calloc(strlen(argv[2]) + 2, sizeof(uint8_t));
++		if (!buf) {
++			ret = -ENOMEM;
++			goto out;
++		}
++
++		buf[0] = '0';
++		memcpy(buf + 1, argv[2], strlen(argv[2]));
++
++		ret = hex2bin(data, buf, len);
++		if (ret) {
++			cprintln(ERROR, "*** Cannot convert hexstring to binary ***");
++			free(buf);
++			goto out;
++		}
++
++		free(buf);
++	} else {
++		cprintln(ERROR, "*** Invalid length ***");
++		ret = -EINVAL;
++		goto out;
++	}
++
++	ret = mtk_efuse_write(field, (void *)data, len);
++
++out:
++	free(data);
++	return ret;
++}
++
++static struct cmd_tbl efuse_cmd_sub[] = {
++	U_BOOT_CMD_MKENT(read, 2, 0, do_efuse_read, "", ""),
++	U_BOOT_CMD_MKENT(write, 3, 0, do_efuse_write, "", "")
++};
++
++static int do_efuse(struct cmd_tbl *cmdtp, int flag, int argc,
++		    char *const argv[])
++{
++	struct cmd_tbl *cp;
++
++	if (argc < 2)
++		return CMD_RET_USAGE;
++
++	argc--;
++	argv++;
++
++	cp = find_cmd_tbl(argv[0], efuse_cmd_sub, ARRAY_SIZE(efuse_cmd_sub));
++	if (cp)
++		return cp->cmd(cmdtp, flag, argc, argv);
++
++	return CMD_RET_USAGE;
++}
++
++static char efuse_help_text[] =
++	"read <index> - read <index> eFuse field\n"
++	"efuse write <index> <data> - write <data> to <index> eFuse field\n";
++
++U_BOOT_CMD(efuse, CONFIG_SYS_MAXARGS, 0, do_efuse, "MTK eFuse read/write commands",
++	   efuse_help_text);
+diff --git a/board/mediatek/common/colored_print.h b/board/mediatek/common/colored_print.h
+new file mode 100644
+index 0000000..5fbc45f
+--- /dev/null
++++ b/board/mediatek/common/colored_print.h
+@@ -0,0 +1,30 @@
++/* SPDX-License-Identifier: GPL-2.0 */
++/*
++ * Copyright (C) 2021 MediaTek Inc. All Rights Reserved.
++ *
++ * Author: Weijie Gao <weijie.gao@mediatek.com>
++ *
++ * Helper to print colored texts
++ */
++
++#ifndef _COLORED_PRINT_H_
++#define _COLORED_PRINT_H_
++
++#include <stdio.h>
++
++#define COLOR_PROMPT	"\x1b[0;33m"
++#define COLOR_INPUT	"\x1b[4;36m"
++#define COLOR_ERROR	"\x1b[93;41m"
++#define COLOR_CAUTION	"\x1b[1;31m"
++#define COLOR_NORMAL	"\x1b[0m"
++
++#define cprintln(color, fmt, ...) \
++	printf(COLOR_##color fmt COLOR_NORMAL "\n", ##__VA_ARGS__)
++
++#define cprint(color, fmt, ...) \
++	printf(COLOR_##color fmt COLOR_NORMAL, ##__VA_ARGS__)
++
++#define cprint_cont(color, fmt, ...) \
++	printf(COLOR_##color fmt, ##__VA_ARGS__)
++
++#endif /* _COLORED_PRINT_H_ */
+diff --git a/board/mediatek/common/mtk_efuse.c b/board/mediatek/common/mtk_efuse.c
+new file mode 100644
+index 0000000..0c5aeb7
+--- /dev/null
++++ b/board/mediatek/common/mtk_efuse.c
+@@ -0,0 +1,160 @@
++// SPDX-License-Identifier: GPL-2.0-or-later
++/*
++ * Copyright (C) 2021 MediaTek Incorporation. All Rights Reserved.
++ *
++ * Author: Alvin Kuo <Alvin.Kuo@mediatek.com>
++ */
++
++#include <errno.h>
++#include <stdio.h>
++#include <string.h>
++#include <linux/io.h>
++#include <linux/types.h>
++#include <linux/arm-smccc.h>
++#include <malloc.h>
++#include "mtk_efuse.h"
++
++static int mtk_efuse_smc(uint32_t smc_fid,
++			 uint32_t x1,
++			 uint32_t x2,
++			 uint32_t x3,
++			 uint32_t x4,
++			 struct arm_smccc_res *res)
++{
++	/* SMC64 calling convention is used if in 64bits Uboot */
++	if (sizeof(void *) == 8)
++		smc_fid |= (0x1 << 30);
++
++	arm_smccc_smc(smc_fid, x1, x2, x3, x4, 0x0, 0x0, 0x0, res);
++
++	return 0;
++}
++
++int mtk_efuse_get_len(uint32_t efuse_field, uint32_t *len_p)
++{
++	int ret;
++	struct arm_smccc_res res;
++
++	if (!len_p)
++		return -EINVAL;
++
++	ret = mtk_efuse_smc(MTK_SIP_EFUSE_GET_LEN,
++			    efuse_field, 0x0, 0x0, 0x0,
++			    &res);
++	if (ret < 0)
++		return ret;
++	else if (res.a0 != MTK_EFUSE_SUCCESS) {
++		printf("%s : get efuse length fail (%lu)\n",
++		       __func__, res.a0);
++		return -1;
++	}
++
++	*len_p = res.a1;
++
++	return 0;
++}
++
++int mtk_efuse_read(uint32_t efuse_field,
++		   uint8_t *read_buffer,
++		   uint32_t read_buffer_len)
++{
++	int ret;
++	uint32_t offset;
++	uint32_t efuse_len;
++	struct arm_smccc_res res;
++	uint32_t val;
++
++	ret = mtk_efuse_get_len(efuse_field, &efuse_len);
++	if (ret)
++		return ret;
++
++	/* verify buffer */
++	if (!read_buffer)
++		return -EINVAL;
++	if (read_buffer_len < efuse_len)
++		return -ENOMEM;
++
++	/* clean read buffer */
++	memset(read_buffer, 0x0, read_buffer_len);
++
++	/* issue efuse read */
++	for (offset = 0; offset < efuse_len; offset += 4) {
++		ret = mtk_efuse_smc(MTK_SIP_EFUSE_READ,
++				    efuse_field, offset, 0x0, 0x0,
++				    &res);
++		if (ret < 0)
++			return ret;
++		else if (res.a0 != MTK_EFUSE_SUCCESS) {
++			printf("%s : read efuse fail (%lu)\n",
++			       __func__, res.a0);
++			return -1;
++		}
++		val = res.a1;
++
++		if (offset + sizeof(val) <= efuse_len)
++			memcpy(read_buffer + offset, &val, sizeof(val));
++		else
++			memcpy(read_buffer + offset, &val, efuse_len - offset);
++	}
++
++	return 0;
++}
++
++int mtk_efuse_write(uint32_t efuse_field,
++		    uint8_t *write_buffer,
++		    uint32_t write_buffer_len)
++{
++	int ret;
++	uint32_t efuse_len;
++	const uint32_t shm_size = 4096;
++	struct arm_smccc_res res;
++	void *data;
++
++	ret = mtk_efuse_get_len(efuse_field, &efuse_len);
++	if (ret)
++		return ret;
++
++	/* verify buffer */
++	if (!write_buffer)
++		return -EINVAL;
++	if (write_buffer_len < efuse_len)
++		return -ENOMEM;
++
++	data = memalign(shm_size, round_up(efuse_len, shm_size));
++	if (!data)
++		return -ENOMEM;
++
++	memcpy(data, write_buffer, efuse_len);
++
++	/* issue efuse write */
++	ret = mtk_efuse_smc(MTK_SIP_EFUSE_WRITE,
++			    efuse_field, virt_to_phys(data), efuse_len,
++			    0x0, &res);
++	if (!ret && res.a0 != MTK_EFUSE_SUCCESS) {
++		printf("%s : write efuse fail (%lu)\n", __func__, res.a0);
++		ret = -1;
++	}
++
++	free(data);
++
++	return ret;
++}
++
++int mtk_efuse_disable(uint32_t efuse_field)
++{
++	int ret;
++	struct arm_smccc_res res;
++
++	ret = mtk_efuse_smc(MTK_SIP_EFUSE_DISABLE,
++			    efuse_field, 0x0, 0x0, 0x0,
++			    &res);
++	if (ret < 0)
++		return ret;
++	else if (res.a0 != MTK_EFUSE_SUCCESS) {
++		printf("%s : disable efuse fail (%lu)\n",
++		       __func__, res.a0);
++		return -1;
++	}
++
++	return 0;
++}
+diff --git a/board/mediatek/common/mtk_efuse.h b/board/mediatek/common/mtk_efuse.h
+new file mode 100644
+index 0000000..ebbb64e
+--- /dev/null
++++ b/board/mediatek/common/mtk_efuse.h
+@@ -0,0 +1,89 @@
++/* SPDX-License-Identifier: GPL-2.0-or-later */
++/*
++ * Copyright (C) 2021 MediaTek Incorporation. All Rights Reserved.
++ *
++ * Author: Alvin Kuo <Alvin.Kuo@mediatek.com>
++ */
++#ifndef __MTK_EFUSE_H__
++#define __MTK_EFUSE_H__
++
++/*********************************************************************************
++ *
++ *  Returned status of eFuse SMC
++ *
++ ********************************************************************************/
++#define MTK_EFUSE_SUCCESS                                       0x00000000
++#define MTK_EFUSE_ERROR_INVALID_PARAMETER                       0x00000001
++#define MTK_EFUSE_ERROR_INVALID_EFUSE_FIELD                     0x00000002
++#define MTK_EFUSE_ERROR_EFUSE_FIELD_DISABLED                    0x00000003
++#define MTK_EFUSE_ERROR_EFUSE_LEN_EXCEED_BUFFER_LEN             0x00000004
++#define MTK_EFUSE_ERROR_READ_EFUSE_FIELD_FAIL                   0x00000005
++#define MTK_EFUSE_ERROR_WRITE_EFUSE_FIELD_FAIL                  0x00000006
++#define MTK_EFUSE_ERROR_EFUSE_FIELD_SECURE                      0x00000007
++
++/*********************************************************************************
++ *
++ *  Function ID of eFuse SMC
++ *
++ ********************************************************************************/
++/*
++ *  MTK_SIP_EFUSE_GET_LEN - get data length of efuse field
++ *
++ *  parameters
++ *  @x1:        efuse field
++ *
++ *  return
++ *  @r0:        status
++ *  @r1:        data length
++ */
++#define MTK_SIP_EFUSE_GET_LEN           0x82000501
++
++/*
++ *  MTK_SIP_EFUSE_WRITE - write efuse field
++ *
++ *  parameters
++ *  @x1:        efuse field
++ *  @x2:        addr
++ *  @x3:        size
++ *
++ *  return
++ *  @r0:        status
++ */
++#define MTK_SIP_EFUSE_WRITE             0x82000502
++
++/*
++ *  MTK_SIP_EFUSE_READ - read efuse field
++ *
++ *  parameters
++ *  @x1:        efuse field
++ *  @x2:        offset
++ *
++ *  return
++ *  @r0:        status
++ */
++#define MTK_SIP_EFUSE_READ              0x82000503
++
++/*
++ *  MTK_SIP_EFUSE_DISABLE - disable efuse field
++ *
++ *  parameters
++ *  @x1:        efuse field
++ *
++ *  return
++ *  @r0:        status
++ */
++#define MTK_SIP_EFUSE_DISABLE		0x82000504
++
++int mtk_efuse_get_len(uint32_t efuse_field, uint32_t *len_p);
++
++int mtk_efuse_read(uint32_t efuse_field,
++		   uint8_t *read_buffer,
++		   uint32_t read_buffer_len);
++
++int mtk_efuse_write(uint32_t efuse_field,
++		    uint8_t *write_buffer,
++		    uint32_t write_buffer_len);
++
++int mtk_efuse_disable(uint32_t efuse_field);
++
++#endif /* __MTK_EFUSE_H__ */
+diff --git a/configs/mt7987a_emplus_ehr330_defconfig b/configs/mt7987a_emplus_ehr330_defconfig
+index def61a6..b791af6 100644
+--- a/configs/mt7987a_emplus_ehr330_defconfig
++++ b/configs/mt7987a_emplus_ehr330_defconfig
+@@ -42,6 +42,7 @@ CONFIG_CMD_PCI=y
+ CONFIG_CMD_TFTPSRV=y
+ CONFIG_CMD_PING=y
+ CONFIG_CMD_SMC=y
++CONFIG_MTK_EFUSE_CMD=y
+ CONFIG_CMD_UBI=y
+ CONFIG_ENV_OVERWRITE=y
+ CONFIG_ENV_IS_IN_MTD=y
