@@ -38,7 +38,8 @@ usage() {
 	printf "\n\t-s ==> set FDT load address to 'addr' (hex)"
 	printf "\n\t\t(can be specified more than once)"
 	printf "\n\t-K ==> sign images, using key-name-hint 'name'"
-	printf "\n\t-G ==> signing algorithm to use with -K, e.g. sha256,rsa2048\n"
+	printf "\n\t-G ==> signing algorithm to use with -K, e.g. sha256,rsa2048"
+	printf "\n\t-E ==> encrypt firmware payloads using the named cipher algorithm\n"
 	exit 1
 }
 
@@ -51,7 +52,7 @@ LOADABLES=
 DTOVERLAY=
 DTADDR=
 
-while getopts ":A:a:c:C:D:d:e:f:i:k:l:n:o:O:v:r:s:H:K:G:" OPTION
+while getopts ":A:a:c:C:D:d:e:f:i:k:l:n:o:O:v:r:s:H:K:G:E:" OPTION
 do
 	case $OPTION in
 		A ) ARCH=$OPTARG;;
@@ -74,6 +75,7 @@ do
 		v ) VERSION=$OPTARG;;
 		K ) SIGN_KEYNAME=$OPTARG;;
 		G ) SIGN_ALGO=$OPTARG;;
+		E ) CIPHER_ALGO=$OPTARG;;
 		* ) echo "Invalid option passed to '$0' (options:$*)"
 		usage;;
 	esac
@@ -124,6 +126,12 @@ if [ -n "${DTB}" ]; then
 fi
 
 if [ -n "${INITRD}" ]; then
+	INITRD_CIPHER_NODE=
+	[ -z "${CIPHER_ALGO}" ] || INITRD_CIPHER_NODE="
+			cipher {
+				algo = \"${CIPHER_ALGO}\";
+				key-name-hint = \"rootfs_key\";
+			};"
 	INITRD_NODE="
 		initrd${REFERENCE_CHAR}$INITRDNUM {
 			description = \"${ARCH_UPPER} OpenWrt ${DEVICE} initrd\";
@@ -132,6 +140,7 @@ if [ -n "${INITRD}" ]; then
 			type = \"ramdisk\";
 			arch = \"${ARCH}\";
 			os = \"linux\";
+			${INITRD_CIPHER_NODE}
 			hash${REFERENCE_CHAR}1 {
 				algo = \"crc32\";
 			};
@@ -145,6 +154,12 @@ fi
 
 
 if [ -n "${ROOTFS}" ]; then
+	ROOTFS_CIPHER_NODE=
+	[ -z "${CIPHER_ALGO}" ] || ROOTFS_CIPHER_NODE="
+			cipher {
+				algo = \"${CIPHER_ALGO}\";
+				key-name-hint = \"rootfs_key\";
+			};"
 	ROOTFS_NODE="
 		rootfs${REFERENCE_CHAR}$ROOTFSNUM {
 			description = \"${ARCH_UPPER} OpenWrt ${DEVICE} rootfs\";
@@ -153,6 +168,7 @@ if [ -n "${ROOTFS}" ]; then
 			type = \"filesystem\";
 			arch = \"${ARCH}\";
 			compression = \"none\";
+			${ROOTFS_CIPHER_NODE}
 			hash${REFERENCE_CHAR}1 {
 				algo = \"crc32\";
 			};
@@ -163,6 +179,13 @@ if [ -n "${ROOTFS}" ]; then
 "
 	LOADABLES="${LOADABLES:+$LOADABLES, }\"rootfs${REFERENCE_CHAR}${ROOTFSNUM}\""
 fi
+
+KERNEL_CIPHER_NODE=
+[ -z "${CIPHER_ALGO}" ] || KERNEL_CIPHER_NODE="
+			cipher {
+				algo = \"${CIPHER_ALGO}\";
+				key-name-hint = \"kernel_key\";
+			};"
 
 # Optional FIT signature node, only emitted when both a key-name-hint and a
 # signing algorithm are given; output is unchanged for every other caller.
@@ -235,6 +258,7 @@ DATA="/dts-v1/;
 			compression = \"${COMPRESS}\";
 			load = <${LOAD_ADDR}>;
 			entry = <${ENTRY_ADDR}>;
+			${KERNEL_CIPHER_NODE}
 			hash${REFERENCE_CHAR}1 {
 				algo = \"crc32\";
 			};

@@ -452,19 +452,33 @@ define Build/fit-its
 		$(if $(DEVICE_DTS_OVERLAY),$(foreach dtso,$(DEVICE_DTS_OVERLAY), -O $(dtso):$(KERNEL_BUILD_DIR)/image-$(dtso).dtbo)) \
 		-c $(if $(DEVICE_DTS_CONFIG),$(DEVICE_DTS_CONFIG),"config-1") \
 		-A $(LINUX_KARCH) -v $(LINUX_VERSION) \
-		$(if $(FIT_KEY_NAME),-K $(FIT_KEY_NAME)) $(if $(FIT_KEY_ALG),-G $(FIT_KEY_ALG))
+		$(if $(FIT_KEY_NAME),-K $(FIT_KEY_NAME)) $(if $(FIT_KEY_ALG),-G $(FIT_KEY_ALG)) \
+		$(if $(FIT_ENCRYPT),-E $(FIT_CIPHER_ALG))
+endef
+
+define Build/fit-encryption-keys
+	rm -rf $@.fit-keys
+	mkdir -p $@.fit-keys
+	cp $(FIT_KEY_DIR)/$(FIT_KEY_NAME).key $(FIT_KEY_DIR)/$(FIT_KEY_NAME).crt $@.fit-keys/
+	$(TOPDIR)/scripts/gen-mtk-fw-encryption-keys.sh \
+		--platform-key $(FIT_PLATFORM_KEY) --roe-salt $(FIT_ROE_KEY_SALT) \
+		--output-dir $@.fit-keys \
+		--key kernel_key:$(FIT_KERNEL_KEY_SALT) \
+		--key rootfs_key:$(FIT_ROOTFS_KEY_SALT)
 endef
 
 define Build/fit-image
-	$(call locked,PATH=$(LINUX_DIR)/scripts/dtc:$(PATH) mkimage $(if $(findstring external,$(word 3,$(1))),\
-		-E -B 0x1000 $(if $(findstring static,$(word 3,$(1))),-p 0x1000)) -f $@.its $(if $(FIT_KEY_DIR),-k $(FIT_KEY_DIR) -r) $@.new, \
+	$(call locked,PATH=$(LINUX_DIR)/scripts/dtc:$(PATH) $(if $(FIT_MKIMAGE),$(FIT_MKIMAGE),mkimage) $(if $(findstring external,$(word 3,$(1))),\
+		-E -B 0x1000 $(if $(findstring static,$(word 3,$(1))),-p 0x1000)) -f $@.its $(if $(FIT_KEY_DIR),-k $(if $(FIT_ENCRYPT),$@.fit-keys,$(FIT_KEY_DIR)) -r) $@.new, \
 	  gen-cpio$(if $(TARGET_PER_DEVICE_ROOTFS),.$(ROOTFS_ID/$(DEVICE_NAME))))
 	@mv $@.new $@
 endef
 
 define Build/fit
+	$(if $(FIT_ENCRYPT),$(call Build/fit-encryption-keys))
 	$(call Build/fit-its,$(1))
 	$(call Build/fit-image,$(1))
+	$(if $(FIT_ENCRYPT),rm -rf $@.fit-keys)
 endef
 
 define Build/libdeflate-gzip

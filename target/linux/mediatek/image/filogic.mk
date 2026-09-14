@@ -1,7 +1,9 @@
 DTS_DIR := $(DTS_DIR)/mediatek
 DEVICE_VARS += SUPPORTED_TELTONIKA_DEVICES
 DEVICE_VARS += SUPPORTED_TELTONIKA_HW_MODS
-DEVICE_VARS += FIT_KEY_DIR FIT_KEY_NAME FIT_KEY_ALG
+DEVICE_VARS += FIT_KEY_DIR FIT_KEY_NAME FIT_KEY_ALG FIT_ENCRYPT FIT_CIPHER_ALG
+DEVICE_VARS += FIT_MKIMAGE FIT_PLATFORM_KEY FIT_ROE_KEY_SALT
+DEVICE_VARS += FIT_KERNEL_KEY_SALT FIT_ROOTFS_KEY_SALT
 
 define Image/Prepare
 	# For UBI we want only one extra block
@@ -3956,6 +3958,13 @@ define Device/emplus_ehr330-common
   DEVICE_VENDOR := Emplus
   DEVICE_DTS := mt7987a-emplus-ehr330
   DEVICE_DTS_DIR := ../dts
+  FIT_ENCRYPT :=
+  FIT_CIPHER_ALG :=
+  FIT_MKIMAGE :=
+  FIT_PLATFORM_KEY :=
+  FIT_ROE_KEY_SALT :=
+  FIT_KERNEL_KEY_SALT :=
+  FIT_ROOTFS_KEY_SALT :=
   DEVICE_DTC_FLAGS := --pad 4096
   DEVICE_DTS_LOADADDR := 0x4ff00000
   DEVICE_PACKAGES := bash emplus-ehr330-defaults mtk-efuse-nl-tool-mt7987 \
@@ -3986,6 +3995,27 @@ define Device/emplus_ehr330
   ARTIFACT/bl2.img.signkeyhash := copy-file $(STAGING_DIR_IMAGE)/mt7987-ehr330-bl2.img.signkeyhash
 endef
 TARGET_DEVICES += emplus_ehr330
+
+define Device/emplus_ehr330_encrypted
+  $(call Device/emplus_ehr330-common)
+  DEVICE_MODEL := EHR330 (signed and encrypted)
+  DEVICE_IMG_PREFIX := $(IMG_PREFIX)-emplus_ehr330-encrypted
+  FIT_KEY_DIR := $(TOPDIR)/keys/mtk-secure-boot
+  FIT_KEY_NAME := fit_key
+  FIT_KEY_ALG := sha256,rsa2048
+  FIT_ENCRYPT := 1
+  FIT_CIPHER_ALG := tee_aes256
+  FIT_MKIMAGE := $(STAGING_DIR_HOST)/bin/mkimage-mtk-fw-encrypted
+  FIT_PLATFORM_KEY := $(TOPDIR)/keys/mtk-secure-boot/platform_key.bin
+  FIT_ROE_KEY_SALT := $(TOPDIR)/keys/mtk-secure-boot/roe_salt.bin
+  FIT_KERNEL_KEY_SALT := $(TOPDIR)/keys/mtk-secure-boot/kernel_salt.bin
+  FIT_ROOTFS_KEY_SALT := $(TOPDIR)/keys/mtk-secure-boot/rootfs_salt.bin
+  ARTIFACTS := spim-nand-preloader.bin spim-nand-bl31-uboot.fip bl2.img.signkeyhash
+  ARTIFACT/spim-nand-preloader.bin := mt7987-bl2 ehr330-encrypted
+  ARTIFACT/spim-nand-bl31-uboot.fip := mt7987-bl31-uboot emplus_ehr330_encrypted
+  ARTIFACT/bl2.img.signkeyhash := copy-file $(STAGING_DIR_IMAGE)/mt7987-ehr330-encrypted-bl2.img.signkeyhash
+endef
+TARGET_DEVICES += emplus_ehr330_encrypted
 
 define Device/emplus_ehr330_unsigned
   $(call Device/emplus_ehr330-common)
