@@ -1,0 +1,34 @@
+From: OpenWrt EHR330 support <openwrt-devel@lists.openwrt.org>
+Subject: [PATCH] mediatek: boot encrypted FIT rootfs from RAM
+
+The encrypted rootfs is decrypted in the FIT loaded into RAM.  The backing
+flash still contains ciphertext, so it cannot be exposed through fitblk.
+Override saved legacy boot arguments and artifact filenames after the
+environment is imported.  This mounts the decrypted FIT ramdisk and prevents
+encrypted systems from accidentally loading signed-profile update artifacts.
+
+--- a/common/main.c
++++ b/common/main.c
+@@ -51,6 +51,22 @@ void main_loop(void)
+ 	if (IS_ENABLED(CONFIG_VERSION_VARIABLE))
+ 		env_set("ver", version_string);  /* set version variable */
+ 
++	if (IS_ENABLED(CONFIG_MTK_FW_ENCRYPT)) {
++		env_set("bootargs", "root=/dev/ram0 rootfstype=squashfs");
++		env_set("bl2file",
++			"openwrt-mediatek-filogic-emplus_ehr330-encrypted-"
++			"spim-nand-preloader.bin");
++		env_set("fipfile",
++			"openwrt-mediatek-filogic-emplus_ehr330-encrypted-"
++			"spim-nand-bl31-uboot.fip");
++		env_set("kernelfile",
++			"openwrt-mediatek-filogic-emplus_ehr330-encrypted-"
++			"squashfs-sysupgrade.itb");
++		env_set("recoveryfile",
++			"openwrt-mediatek-filogic-emplus_ehr330-encrypted-"
++			"initramfs-recovery.itb");
++	}
++
+ 	cli_init();
+ 
+ 	if (IS_ENABLED(CONFIG_USE_PREBOOT))
