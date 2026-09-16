@@ -3,7 +3,7 @@ DEVICE_VARS += SUPPORTED_TELTONIKA_DEVICES
 DEVICE_VARS += SUPPORTED_TELTONIKA_HW_MODS
 DEVICE_VARS += FIT_KEY_DIR FIT_KEY_NAME FIT_KEY_ALG FIT_ENCRYPT FIT_CIPHER_ALG
 DEVICE_VARS += FIT_MKIMAGE FIT_PLATFORM_KEY FIT_ROE_KEY_SALT
-DEVICE_VARS += FIT_KERNEL_KEY_SALT FIT_ROOTFS_KEY_SALT
+DEVICE_VARS += FIT_KERNEL_KEY_SALT FIT_ROOTFS_KEY_SALT FIT_ROOTFS_AS_RAMDISK
 
 define Image/Prepare
 	# For UBI we want only one extra block
@@ -3982,6 +3982,7 @@ define Device/emplus_ehr330-common
   FIT_ROE_KEY_SALT :=
   FIT_KERNEL_KEY_SALT :=
   FIT_ROOTFS_KEY_SALT :=
+  FIT_ROOTFS_AS_RAMDISK :=
   DEVICE_DTC_FLAGS := --pad 4096
   DEVICE_DTS_LOADADDR := 0x4ff00000
   DEVICE_PACKAGES := bash emplus-ehr330-defaults mtk-efuse-nl-tool-mt7987 \
@@ -4028,6 +4029,7 @@ define Device/emplus_ehr330_encrypted
   FIT_ROE_KEY_SALT := $(TOPDIR)/keys/mtk-secure-boot/roe_salt.bin
   FIT_KERNEL_KEY_SALT := $(TOPDIR)/keys/mtk-secure-boot/kernel_salt.bin
   FIT_ROOTFS_KEY_SALT := $(TOPDIR)/keys/mtk-secure-boot/rootfs_salt.bin
+  FIT_ROOTFS_AS_RAMDISK := 1
   ARTIFACTS := spim-nand-preloader.bin spim-nand-bl31-uboot.fip bl2.img.signkeyhash
   ARTIFACT/spim-nand-preloader.bin := mt7987-bl2 ehr330-encrypted
   ARTIFACT/spim-nand-bl31-uboot.fip := mt7987-bl31-uboot emplus_ehr330_encrypted

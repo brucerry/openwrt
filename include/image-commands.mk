@@ -453,7 +453,8 @@ define Build/fit-its
 		-c $(if $(DEVICE_DTS_CONFIG),$(DEVICE_DTS_CONFIG),"config-1") \
 		-A $(LINUX_KARCH) -v $(LINUX_VERSION) \
 		$(if $(FIT_KEY_NAME),-K $(FIT_KEY_NAME)) $(if $(FIT_KEY_ALG),-G $(FIT_KEY_ALG)) \
-		$(if $(FIT_ENCRYPT),-E $(FIT_CIPHER_ALG))
+		$(if $(FIT_ENCRYPT),-E $(FIT_CIPHER_ALG)) \
+		$(if $(FIT_ROOTFS_AS_RAMDISK),-R)
 endef
 
 define Build/fit-encryption-keys
