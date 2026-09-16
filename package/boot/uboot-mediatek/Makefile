@@ -675,6 +675,7 @@ define U-Boot/mt7987_emplus_ehr330_encrypted
   UBOOT_CONFIG:=mt7987a_emplus_ehr330_encrypted
   UBOOT_MTK_FW_ENC_BASE_CONFIG:=mt7987a_emplus_ehr330
   UBOOT_EHR330_ENV_IMAGE_PROFILE:=emplus_ehr330-encrypted
+  UBOOT_EHR330_ENV_BOOTARGS:=root=/dev/ram0 rootfstype=squashfs
   UBOOT_IMAGE:=u-boot.fip
   BL2_BOOTDEV:=ehr330-encrypted
   BL2_SOC:=mt7987
@@ -1506,6 +1507,7 @@ define Build/Prepare
 	$(CP) $(CURDIR)/files/mtk-fw-encryption/. $(PKG_BUILD_DIR)/
 	[ -z "$(UBOOT_MTK_FW_ENC)" ] || { cp $(PKG_BUILD_DIR)/configs/$(UBOOT_MTK_FW_ENC_BASE_CONFIG)_defconfig $(PKG_BUILD_DIR)/configs/$(UBOOT_CONFIG)_defconfig; cat $(PKG_BUILD_DIR)/mtk-fw-encryption.config >> $(PKG_BUILD_DIR)/configs/$(UBOOT_CONFIG)_defconfig; }
 	[ -z "$(UBOOT_EHR330_ENV_IMAGE_PROFILE)" ] || sed -i 's/emplus_ehr330-signed/$(UBOOT_EHR330_ENV_IMAGE_PROFILE)/g' $(PKG_BUILD_DIR)/defenvs/emplus_ehr330_env
+	[ -z "$(UBOOT_EHR330_ENV_BOOTARGS)" ] || sed -i 's|^bootargs=.*|bootargs=$(UBOOT_EHR330_ENV_BOOTARGS)|' $(PKG_BUILD_DIR)/defenvs/emplus_ehr330_env
 endef
 endif
 
