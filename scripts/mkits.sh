@@ -39,7 +39,8 @@ usage() {
 	printf "\n\t\t(can be specified more than once)"
 	printf "\n\t-K ==> sign images, using key-name-hint 'name'"
 	printf "\n\t-G ==> signing algorithm to use with -K, e.g. sha256,rsa2048"
-	printf "\n\t-E ==> encrypt firmware payloads using the named cipher algorithm\n"
+	printf "\n\t-E ==> encrypt firmware payloads using the named cipher algorithm"
+	printf "\n\t-R ==> expose the RootFS blob as the FIT ramdisk\n"
 	exit 1
 }
 
@@ -51,8 +52,9 @@ HASH=sha1
 LOADABLES=
 DTOVERLAY=
 DTADDR=
+ROOTFS_AS_RAMDISK=
 
-while getopts ":A:a:c:C:D:d:e:f:i:k:l:n:o:O:v:r:s:H:K:G:E:" OPTION
+while getopts ":A:a:c:C:D:d:e:f:i:k:l:n:o:O:v:r:s:H:K:G:E:R" OPTION
 do
 	case $OPTION in
 		A ) ARCH=$OPTARG;;
@@ -76,6 +78,7 @@ do
 		K ) SIGN_KEYNAME=$OPTARG;;
 		G ) SIGN_ALGO=$OPTARG;;
 		E ) CIPHER_ALGO=$OPTARG;;
+		R ) ROOTFS_AS_RAMDISK=1;;
 		* ) echo "Invalid option passed to '$0' (options:$*)"
 		usage;;
 	esac
@@ -154,6 +157,16 @@ fi
 
 
 if [ -n "${ROOTFS}" ]; then
+	ROOTFS_TYPE=filesystem
+	ROOTFS_OS=
+	ROOTFS_PROP=
+	ROOTFS_SIGN_ROLE=loadables
+	if [ -n "${ROOTFS_AS_RAMDISK}" ]; then
+		ROOTFS_TYPE=ramdisk
+		ROOTFS_OS='os = "linux";'
+		ROOTFS_PROP="ramdisk = \"rootfs${REFERENCE_CHAR}${ROOTFSNUM}\";"
+		ROOTFS_SIGN_ROLE=ramdisk
+	fi
 	ROOTFS_CIPHER_NODE=
 	[ -z "${CIPHER_ALGO}" ] || ROOTFS_CIPHER_NODE="
 			cipher {
@@ -165,8 +178,9 @@ if [ -n "${ROOTFS}" ]; then
 			description = \"${ARCH_UPPER} OpenWrt ${DEVICE} rootfs\";
 			${COMPATIBLE_PROP}
 			data = /incbin/(\"${ROOTFS}.pagesync\");
-			type = \"filesystem\";
+			type = \"${ROOTFS_TYPE}\";
 			arch = \"${ARCH}\";
+			${ROOTFS_OS}
 			compression = \"none\";
 			${ROOTFS_CIPHER_NODE}
 			hash${REFERENCE_CHAR}1 {
@@ -177,7 +191,9 @@ if [ -n "${ROOTFS}" ]; then
 			};
 		};
 "
-	LOADABLES="${LOADABLES:+$LOADABLES, }\"rootfs${REFERENCE_CHAR}${ROOTFSNUM}\""
+	if [ -z "${ROOTFS_AS_RAMDISK}" ]; then
+		LOADABLES="${LOADABLES:+$LOADABLES, }\"rootfs${REFERENCE_CHAR}${ROOTFSNUM}\""
+	fi
 fi
 
 KERNEL_CIPHER_NODE=
@@ -195,7 +211,7 @@ if [ -n "${SIGN_KEYNAME}" ] && [ -n "${SIGN_ALGO}" ]; then
 	SIGN_IMAGES="\"kernel\""
 	[ -n "${FDT_NODE}" ] && SIGN_IMAGES="${SIGN_IMAGES}, \"fdt\""
 	[ -n "${INITRD_NODE}" ] && SIGN_IMAGES="${SIGN_IMAGES}, \"ramdisk\""
-	[ -n "${ROOTFS_NODE}" ] && SIGN_IMAGES="${SIGN_IMAGES}, \"loadables\""
+	[ -n "${ROOTFS_NODE}" ] && SIGN_IMAGES="${SIGN_IMAGES}, \"${ROOTFS_SIGN_ROLE}\""
 	SIGN_NODE="
 			signature${REFERENCE_CHAR}1 {
 				algo = \"${SIGN_ALGO}\";
@@ -279,6 +295,7 @@ ${ROOTFS_NODE}
 			kernel = \"kernel${REFERENCE_CHAR}1\";
 			${FDT_PROP}
 			${LOADABLES:+loadables = ${LOADABLES};}
+			${ROOTFS_PROP}
 			${COMPATIBLE_PROP}
 			${INITRD_PROP}
                         ${SIGN_NODE}
