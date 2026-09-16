@@ -4017,6 +4017,7 @@ define Device/emplus_ehr330_encrypted
   $(call Device/emplus_ehr330-common)
   DEVICE_MODEL := EHR330 (signed and encrypted)
   DEVICE_IMG_PREFIX := $(IMG_PREFIX)-emplus_ehr330-encrypted
+  SUPPORTED_DEVICES := emplus,ehr330
   FIT_KEY_DIR := $(TOPDIR)/keys/mtk-secure-boot
   FIT_KEY_NAME := fit_key
   FIT_KEY_ALG := sha256,rsa2048
