@@ -20,7 +20,9 @@
 #define KERNEL_KEY_IDX				1
 #define ROOTFS_KEY_IDX				2
 
-#define SHM_SIZE				0x500000
+#define SHM_MAX_SIZE				0x500000
+#define SHM_PAGE_SIZE				0x1000
+#define SHM_CHUNK_SIZE				(SHM_MAX_SIZE - SHM_PAGE_SIZE)
 
 static int set_iv(uint8_t *iv, uint32_t iv_len)
 {
@@ -49,9 +51,10 @@ static int image_decrypt(uint8_t *cipher, size_t cipher_len,
 	int last_block = 0;
 
 	while (dec_size < cipher_len) {
-		size_t shm_size = min((size_t)SHM_SIZE, cipher_len - dec_size);
+		size_t shm_size = min((size_t)SHM_CHUNK_SIZE,
+				      cipher_len - dec_size);
 
-		if (dec_size + SHM_SIZE >= cipher_len)
+		if (dec_size + shm_size >= cipher_len)
 			last_block = 1;
 
 		arm_smccc_smc(MTK_SIP_FW_DEC_IMAGE, (uintptr_t)cipher, shm_size,
@@ -61,8 +64,8 @@ static int image_decrypt(uint8_t *cipher, size_t cipher_len,
 			return res.a0;
 		}
 
-		dec_size += SHM_SIZE;
-		cipher += SHM_SIZE;
+		dec_size += shm_size;
+		cipher += shm_size;
 		last_block = 0;
 	}
 
