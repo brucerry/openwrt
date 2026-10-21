@@ -33,6 +33,8 @@ define Trusted-Firmware-A/Default
   DDR4_4BG_MODE:=
   DDR_TYPE:=
   NAND_TYPE:=
+  NMBM:=
+  NMBM_NO_CREATE:=
   BOARD_QFN:=
   DRAM_USE_COMB:=
   RAM_BOOT_UART_DL:=
@@ -343,6 +345,18 @@ define Trusted-Firmware-A/mt7986-spim-nand-ddr4
   PLAT:=mt7986
   DDR_TYPE:=ddr4
   NAND_TYPE:=spim:2k+64
+endef
+
+define Trusted-Firmware-A/mt7986-ews276-fit-spim-nand-ddr4
+  NAME:=Emplus EWS276-FIT (SPI-NAND via SPIM, DDR4, existing NMBM)
+  BOOT_DEVICE:=spim-nand
+  BUILD_SUBTARGET:=filogic
+  BUILD_DEVICES:=emplus_ews276-fit
+  PLAT:=mt7986
+  DDR_TYPE:=ddr4
+  NAND_TYPE:=spim:2k+64
+  NMBM:=1
+  NMBM_NO_CREATE:=1
 endef
 
 define Trusted-Firmware-A/mt7986-spim-nand-ubi-ddr4
@@ -719,6 +733,7 @@ TFA_TARGETS:= \
 	mt7986-sdmmc-ddr4 \
 	mt7986-snand-ddr4 \
 	mt7986-spim-nand-ddr4 \
+	mt7986-ews276-fit-spim-nand-ddr4 \
 	mt7986-spim-nand-ubi-ddr4 \
 	mt7986-spim-nand-4k-ddr4 \
 	mt7987-emmc-comb \
@@ -757,6 +772,8 @@ TFA_MAKE_FLAGS += \
 	$(if $(findstring ddr4,$(DDR_TYPE)),DRAM_USE_DDR4=1) \
 	$(if $(BOARD_QFN),BOARD_QFN=1,BOARD_BGA=1) \
 	$(if $(NAND_TYPE),NAND_TYPE=$(NAND_TYPE)) \
+	$(if $(NMBM),NMBM=$(NMBM)) \
+	$(if $(NMBM_NO_CREATE),NMBM_NO_CREATE=$(NMBM_NO_CREATE)) \
 	HAVE_DRAM_OBJ_FILE=yes \
 	$(if $(DDR3_FLYBY),DDR3_FLYBY=1) \
 	$(if $(DDR3_FREQ_1866),DDR3_FREQ_1866=1) \

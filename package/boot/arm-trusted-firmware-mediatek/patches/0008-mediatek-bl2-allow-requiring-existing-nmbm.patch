@@ -1,0 +1,46 @@
+Subject: [PATCH] mediatek: allow BL2 to require existing NMBM metadata
+
+Keep the historical default. Boards migrating an existing logical NMBM layout
+can disable identity-map creation when the signature or mapping is missing.
+
+--- a/plat/mediatek/apsoc_common/bl2/bl2_boot_nand_nmbm.c
++++ b/plat/mediatek/apsoc_common/bl2/bl2_boot_nand_nmbm.c
+@@ -23,6 +23,10 @@
+ #define NMBM_MAX_RESERVED_BLOCKS 256
+ #endif
+ 
++#ifndef NMBM_NO_CREATE
++#define NMBM_NO_CREATE 0
++#endif
++
+ static struct nmbm_instance *ni = (struct nmbm_instance *)SCRATCH_BUF_OFFSET;
+ 
+ static int nmbm_lower_read_page(void *arg, uint64_t addr, void *buf, void *oob,
+@@ -92,7 +96,9 @@ static int nmbm_init(void)
+ 
+ 	memset(&nld, 0, sizeof(nld));
+ 
+-	nld.flags = NMBM_F_CREATE | NMBM_F_READ_ONLY;
++	nld.flags = NMBM_F_READ_ONLY;
++	if (!NMBM_NO_CREATE)
++		nld.flags |= NMBM_F_CREATE;
+ 	nld.max_ratio = NMBM_MAX_RATIO;
+ 	nld.max_reserved_blocks = NMBM_MAX_RESERVED_BLOCKS;
+ 
+--- a/plat/mediatek/apsoc_common/bl2/bl2_image.mk
++++ b/plat/mediatek/apsoc_common/bl2/bl2_image.mk
+@@ -116,6 +116,9 @@ ifeq ($$(NMBM),1)
+ include lib/nmbm/nmbm.mk
+ BL2_SOURCES		+=	$$(NMBM_SOURCES)				\
+ 				$(APSOC_COMMON)/bl2/bl2_boot_nand_nmbm.c
++ifneq ($(NMBM_NO_CREATE),)
++BL2_CPPFLAGS		+=	-DNMBM_NO_CREATE=$(NMBM_NO_CREATE)
++endif
+ ifneq ($(NMBM_MAX_RATIO),)
+ BL2_CPPFLAGS		+=	-DNMBM_MAX_RATIO=$(NMBM_MAX_RATIO)
+ endif
+--- a/plat/mediatek/mt7986/platform.mk
++++ b/plat/mediatek/mt7986/platform.mk
+@@ -66,1 +66,1 @@
+-$(call MAKE_DEP,bl2,bl2_boot_nand_nmbm,NMBM_MAX_RATIO NMBM_MAX_RESERVED_BLOCKS NMBM_DEFAULT_LOG_LEVEL)
++$(call MAKE_DEP,bl2,bl2_boot_nand_nmbm,NMBM_MAX_RATIO NMBM_MAX_RESERVED_BLOCKS NMBM_DEFAULT_LOG_LEVEL NMBM_NO_CREATE)
