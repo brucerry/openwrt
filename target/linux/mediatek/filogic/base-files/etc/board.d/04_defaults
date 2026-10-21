@@ -5,6 +5,11 @@ board=$(board_name)
 board_config_update
 
 case $board in
+emplus,ews276-fit)
+	ucidef_set_country "00"
+	ucidef_set_wireless "2g" "EWS276-FIT_2.4G" "none"
+	ucidef_set_wireless "5g" "EWS276-FIT_5G" "none"
+	;;
 openwrt,one)
 	ucidef_set_wireless_mac_count 2g 7
 	ucidef_set_wireless_mac_count 5g 7

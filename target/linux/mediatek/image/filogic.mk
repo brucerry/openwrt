@@ -1638,6 +1638,33 @@ define Device/edgecore_eap111
 endef
 TARGET_DEVICES += edgecore_eap111
 
+define Device/emplus_ews276-fit
+  DEVICE_VENDOR := Emplus
+  DEVICE_MODEL := EWS276-FIT
+  DEVICE_DTS := mt7986a-emplus-ews276-fit mt7986a-emplus-ews276-fit-initramfs
+  DEVICE_DTS_DIR := ../dts
+  DEVICE_DTS_LOADADDR := 0x4f000000
+  BLOCKSIZE := 128k
+  PAGESIZE := 2048
+  IMAGE_SIZE := 100m
+  UBINIZE_OPTS := -E 5
+  KERNEL := kernel-bin | gzip
+  KERNEL_INITRAMFS_SUFFIX := -recovery.itb
+  KERNEL_INITRAMFS := kernel-bin | lzma | \
+	fit lzma $$(KDIR)/image-$$(lastword $$(DEVICE_DTS)).dtb with-initrd | pad-to 64k
+  DEVICE_PACKAGES := kmod-mt7915e kmod-mt7986-firmware ews276-fit-eeprom \
+	iw wpad-basic-mbedtls ethtool
+  KERNEL_IN_UBI := 1
+  IMAGES := sysupgrade.itb
+  IMAGE/sysupgrade.itb := append-kernel | \
+	fit gzip $$(KDIR)/image-$$(firstword $$(DEVICE_DTS)).dtb external-static-with-rootfs | \
+	append-metadata | check-size
+  ARTIFACTS := spim-nand-preloader.bin spim-nand-bl31-uboot.fip
+  ARTIFACT/spim-nand-preloader.bin := mt7986-bl2 ews276-fit-spim-nand-ddr4
+  ARTIFACT/spim-nand-bl31-uboot.fip := mt7986-bl31-uboot emplus_ews276-fit
+endef
+TARGET_DEVICES += emplus_ews276-fit
+
 define Device/elecom_wrc-x3000gs3
   DEVICE_VENDOR := ELECOM
   DEVICE_MODEL := WRC-X3000GS3

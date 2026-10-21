@@ -1,0 +1,9 @@
+// SPDX-License-Identifier: (GPL-2.0 OR MIT)
+
+#include "mt7986a-emplus-ews276-fit.dts"
+
+&{/chosen} {
+	/* RAM recovery does not require the installed UBI FIT root disk. */
+	/delete-property/ rootdisk;
+	/delete-property/ bootargs-append;
+};
