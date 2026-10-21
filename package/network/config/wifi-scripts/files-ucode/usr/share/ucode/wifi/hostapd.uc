@@ -79,6 +79,10 @@ function device_country_code(config) {
 	if (!exists(config, 'country_code'))
 		return;
 
+	/* The kernel's world domain is not an ISO country code for hostapd. */
+	if (!config.country_code || config.country_code == '00')
+		return;
+
 	if (config.hw_mode != 'a')
 		delete config.ieee80211h;
 	append_vars(config, [ 'country_code', 'country3', 'ieee80211h' ]);
