@@ -1,6 +1,77 @@
 REQUIRE_IMAGE_METADATA=1
 RAMFS_COPY_BIN='fitblk fit_check_sign'
 
+ews276_fit_initial_setup()
+{
+	# This hook runs before stage2 pivots an installed system into temporary RAM.
+	[ "$(rootfs_type)" = "tmpfs" ] || return 0
+	[ "$(board_name)" = "emplus,ews276-fit" ] &&
+		[ ! -e /sys/firmware/devicetree/base/chosen/rootdisk ] &&
+		[ -z "$UPGRADE_BACKUP" ] || {
+		echo "EWS276-FIT: refusing unexpected recovery root/config backup" >&2
+		return 1
+	}
+
+	local mtdnum ubidev path volume name count=0 offset label
+	[ "$(find_mtd_index ubi)" = 4 ] &&
+		[ "$(find_mtd_index ubi_1)" = 5 ] || return 1
+	for mtdnum in 4 5; do
+		if [ "$mtdnum" = 4 ]; then
+			offset=5767168 label=ubi
+		else
+			offset=121110528 label=ubi_1
+		fi
+		path="/sys/class/mtd/mtd$mtdnum"
+		[ "$(cat "$path/name")" = "$label" ] &&
+			[ "$(cat "$path/offset")" = "$offset" ] &&
+			[ "$(cat "$path/size")" = 115343360 ] &&
+			[ "$(cat "$path/erasesize")" = 131072 ] &&
+			[ "$(cat "$path/writesize")" = 2048 ] || {
+			echo "EWS276-FIT: unexpected primary/secondary NAND layout" >&2
+			return 1
+		}
+	done
+	[ -r /proc/mounts ] || return 1
+	if grep -Eq ' ubifs |^/dev/(ubi|ubiblock)|^ubi[0-9]+:' /proc/mounts; then
+		echo "EWS276-FIT: refusing to format with a UBI filesystem mounted" >&2
+		return 1
+	fi
+	ubidev="$(nand_find_ubi ubi)"
+	[ -n "$ubidev" ] &&
+		[ "$(cat /sys/class/ubi/"$ubidev"/mtd_num)" = 4 ] || {
+		echo "EWS276-FIT: primary UBI must already be attached for inspection" >&2
+		return 1
+	}
+	# A recovery reflash of an existing OpenWrt FIT needs no full-slot format.
+	[ -z "$(nand_find_volume "$ubidev" fit)" ] || return 0
+	for path in /sys/class/ubi/"$ubidev"_*; do
+		[ -e "$path/name" ] || continue
+		name="$(cat "$path/name")"
+		case "$name" in
+		kernel|rootfs|rootfs_data) count=$((count + 1));;
+		*) echo "EWS276-FIT: refusing unknown UBI volume $name" >&2; return 1;;
+		esac
+	done
+	[ "$count" = 0 ] || {
+		[ "$count" = 3 ] &&
+			[ -n "$(nand_find_volume "$ubidev" kernel)" ] &&
+			[ -n "$(nand_find_volume "$ubidev" rootfs)" ] &&
+			[ -n "$(nand_find_volume "$ubidev" rootfs_data)" ]
+	} || { echo "EWS276-FIT: incomplete vendor UBI layout" >&2; return 1; }
+
+	echo "EWS276-FIT: converting primary ubi only; secondary and boot partitions preserved"
+	for path in /sys/class/ubi/"$ubidev"_*; do
+		[ -e "$path/name" ] || continue
+		volume="${path##*/}"
+		if [ -e "/dev/ubiblock${volume#ubi}" ]; then
+			ubiblock -r "/dev/$volume" || return 1
+		fi
+	done
+	ubidetach -m 4 || return 1
+	ubiformat /dev/mtd4 -y || return 1
+	ubiattach -m 4 || return 1
+}
+
 asus_initial_setup()
 {
 	# initialize UBI if it's running on initramfs
@@ -110,6 +181,16 @@ platform_do_upgrade() {
 	local board=$(board_name)
 
 	case "$board" in
+	emplus,ews276-fit)
+		# RAM recovery has no /chosen/rootdisk for automatic FIT routing.
+		CI_METHOD=ubi
+		CI_UBIPART=ubi
+		CI_KERNPART=fit
+		CI_KERN_UBIPART=ubi
+		CI_ROOT_UBIPART=ubi
+		CI_DATA_UBIPART=ubi
+		fit_do_upgrade "$1"
+		;;
 	abt,asr3000|\
 	acer,predator-w6x-ubootmod|\
 	asus,zenwifi-bt8-ubootmod|\
@@ -352,6 +433,10 @@ platform_check_image() {
 	[ "$#" -gt 1 ] && return 1
 
 	case "$board" in
+	emplus,ews276-fit)
+		fit_check_image "$1"
+		return $?
+		;;
 	abt,asr3000|\
 	acer,predator-w6x-ubootmod|\
 	asus,zenwifi-bt8-ubootmod|\
@@ -476,6 +561,10 @@ platform_pre_upgrade() {
 	local board=$(board_name)
 
 	case "$board" in
+	emplus,ews276-fit)
+		# Never format through image checks or continue after preparation fails.
+		fit_check_image "$1" && ews276_fit_initial_setup || exit 1
+		;;
 	asus,rt-ax52|\
 	asus,rt-ax57m|\
 	asus,rt-ax59u|\
