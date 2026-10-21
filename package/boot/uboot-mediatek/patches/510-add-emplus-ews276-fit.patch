@@ -1,0 +1,208 @@
+--- a/arch/arm/mach-mediatek/Kconfig
++++ b/arch/arm/mach-mediatek/Kconfig
+@@ -121,6 +121,14 @@
+ 
+ endchoice
+ 
++config MT7986_EWS276_FIT
++	bool "Emplus EWS276-FIT NAND layout"
++	depends on TARGET_MT7986
++	select NMBM
++	select NMBM_MTD
++	help
++	  Attach the existing vendor NMBM mapping without creating a new one.
++
+ config SYS_BOARD
+ 	string "Board name"
+ 	default "mt7622" if TARGET_MT7622
+--- a/board/mediatek/mt7986/mt7986_rfb.c
++++ b/board/mediatek/mt7986/mt7986_rfb.c
+@@ -45,7 +45,7 @@
+ 
+ int board_nmbm_init(void)
+ {
+-#ifdef CONFIG_ENABLE_NAND_NMBM
++#if defined(CONFIG_ENABLE_NAND_NMBM) || defined(CONFIG_MT7986_EWS276_FIT)
+ 	struct mtd_info *lower, *upper;
+ 	int ret;
+ 
+@@ -60,10 +60,16 @@
+ 		return 0;
+ 	}
+ 
++#ifdef CONFIG_MT7986_EWS276_FIT
++	/* Preserve the vendor mapping; absence is a recovery error. */
++	ret = nmbm_attach_mtd(lower, NMBM_F_EMPTY_PAGE_ECC_OK,
++			      1, 256, &upper);
++#else
+ 	ret = nmbm_attach_mtd(lower,
+ 			      NMBM_F_CREATE | NMBM_F_EMPTY_PAGE_ECC_OK,
+ 			      CONFIG_NMBM_MAX_RATIO,
+ 			      CONFIG_NMBM_MAX_BLOCKS, &upper);
++#endif
+ 
+ 	printf("\n");
+ 
+--- /dev/null
++++ b/configs/mt7986_emplus_ews276-fit_defconfig
+@@ -0,0 +1,77 @@
++CONFIG_ARM=y
++CONFIG_SYS_HAS_NONCACHED_MEMORY=y
++CONFIG_POSITION_INDEPENDENT=y
++CONFIG_ARCH_MEDIATEK=y
++CONFIG_TEXT_BASE=0x41e00000
++CONFIG_SYS_MALLOC_F_LEN=0x4000
++CONFIG_NR_DRAM_BANKS=1
++CONFIG_DEFAULT_DEVICE_TREE="mt7986a-emplus-ews276-fit"
++CONFIG_TARGET_MT7986=y
++CONFIG_MT7986_EWS276_FIT=y
++CONFIG_SYS_LOAD_ADDR=0x46000000
++CONFIG_DEBUG_UART_BASE=0x11002000
++CONFIG_DEBUG_UART_CLOCK=40000000
++CONFIG_DEBUG_UART=y
++CONFIG_FIT=y
++CONFIG_SYS_BOOTM_LEN=0x6000000
++CONFIG_BOOTDELAY=5
++CONFIG_USE_BOOTCOMMAND=y
++CONFIG_BOOTCOMMAND="run boot_flash"
++CONFIG_LOGLEVEL=7
++CONFIG_LOG=y
++# CONFIG_BOARD_INIT is not set
++CONFIG_HUSH_PARSER=y
++CONFIG_SYS_PROMPT="EWS276-FIT> "
++# CONFIG_BOOTM_NETBSD is not set
++# CONFIG_BOOTM_PLAN9 is not set
++# CONFIG_BOOTM_RTEMS is not set
++# CONFIG_BOOTM_VXWORKS is not set
++CONFIG_CMD_GPIO=y
++CONFIG_CMD_MTD=y
++CONFIG_CMD_MTDPARTS=y
++CONFIG_MTDIDS_DEFAULT="nmbm0=nmbm0"
++CONFIG_MTDPARTS_DEFAULT="nmbm0:1024k(BL2),512k(u-boot-env),2048k(Factory)ro,2048k(FIP),112640k(ubi),112640k(ubi_1)ro,512k(ubootenv)ro,384k(cert)ro,640k(userconfig)ro,384k(crashdump)ro"
++CONFIG_CMD_UBI=y
++CONFIG_CMD_PING=y
++CONFIG_CMD_MII=y
++CONFIG_CMD_MDIO=y
++CONFIG_CMD_HASH=y
++CONFIG_SHA256=y
++CONFIG_CMD_SMC=y
++CONFIG_CMD_SAVEENV=y
++CONFIG_OF_EMBED=y
++CONFIG_ENV_OVERWRITE=y
++CONFIG_ENV_IS_IN_MTD=y
++CONFIG_ENV_MTD_DEV="u-boot-env"
++CONFIG_ENV_OFFSET=0x0
++CONFIG_ENV_SIZE=0x20000
++CONFIG_ENV_USE_DEFAULT_ENV_TEXT_FILE=y
++CONFIG_ENV_DEFAULT_ENV_TEXT_FILE="defenvs/emplus_ews276-fit_env"
++CONFIG_ENV_VARS_UBOOT_RUNTIME_CONFIG=y
++CONFIG_NET_RANDOM_ETHADDR=y
++CONFIG_USE_IPADDR=y
++CONFIG_IPADDR="192.168.1.1"
++CONFIG_USE_SERVERIP=y
++CONFIG_SERVERIP="192.168.1.10"
++CONFIG_REGMAP=y
++CONFIG_SYSCON=y
++CONFIG_CLK=y
++# CONFIG_MMC is not set
++CONFIG_MTD=y
++CONFIG_DM_MTD=y
++CONFIG_MTD_SPI_NAND=y
++CONFIG_PHY_ETHERNET_ID=y
++CONFIG_DM_MDIO=y
++CONFIG_DM_ETH_PHY=y
++CONFIG_MEDIATEK_ETH=y
++CONFIG_PINCTRL=y
++CONFIG_PINCONF=y
++CONFIG_PINCTRL_MT7986=y
++CONFIG_POWER_DOMAIN=y
++CONFIG_MTK_POWER_DOMAIN=y
++CONFIG_DM_SERIAL=y
++CONFIG_MTK_SERIAL=y
++CONFIG_SPI=y
++CONFIG_DM_SPI=y
++CONFIG_MTK_SPIM=y
++CONFIG_HEXDUMP=y
+--- /dev/null
++++ b/arch/arm/dts/mt7986a-emplus-ews276-fit.dts
+@@ -0,0 +1,64 @@
++// SPDX-License-Identifier: GPL-2.0-or-later OR MIT
++/dts-v1/;
++#include "mt7986.dtsi"
++#include <dt-bindings/gpio/gpio.h>
++
++/ {
++	model = "Emplus EWS276-FIT";
++	compatible = "emplus,ews276-fit", "mediatek,mt7986";
++	chosen {
++		stdout-path = &uart0;
++		tick-timer = &timer0;
++	};
++	memory@40000000 {
++		device_type = "memory";
++		reg = <0x40000000 0x20000000>;
++	};
++};
++
++&uart0 {
++	mediatek,force-highspeed;
++	status = "okay";
++};
++
++&eth {
++	status = "okay";
++	mediatek,gmac-id = <1>;
++	mediatek,sgmiisys = <&sgmiisys1>;
++	phy-mode = "sgmii";
++	phy-handle = <&phy6>;
++	phy6: ethernet-phy@6 {
++		compatible = "ethernet-phy-id67c9.de10";
++		reg = <6>;
++		reset-gpios = <&pio 6 GPIO_ACTIVE_LOW>;
++		reset-assert-us = <600>;
++		reset-deassert-us = <20000>;
++	};
++};
++
++&pio {
++	spi_flash_pins: spi-flash-pins {
++		mux {
++			function = "flash";
++			groups = "spi0", "spi0_wp_hold";
++		};
++	};
++};
++
++&spi0 {
++	pinctrl-names = "default";
++	pinctrl-0 = <&spi_flash_pins>;
++	status = "okay";
++	must_tx;
++	enhance_timing;
++	dma_ext;
++	ipm_design;
++	support_quad;
++	tick_dly = <1>;
++	sample_sel = <0>;
++	spi_nand@0 {
++		compatible = "spi-nand";
++		reg = <0>;
++		spi-max-frequency = <20000000>;
++	};
++};
+--- /dev/null
++++ b/defenvs/emplus_ews276-fit_env
+@@ -0,0 +1,13 @@
++bootcmd=run boot_flash
++bootdelay=5
++baudrate=115200
++mtdids=nmbm0=nmbm0
++mtdparts=nmbm0:1024k(BL2),512k(u-boot-env),2048k(Factory)ro,2048k(FIP),112640k(ubi),112640k(ubi_1)ro,512k(ubootenv)ro,384k(cert)ro,640k(userconfig)ro,384k(crashdump)ro
++boot_flash=if ubi part ubi; then if ubi read ${loadaddr} fit; then bootm ${loadaddr}; fi; fi
++boot_recovery=if tftpboot ${loadaddr} ${recoveryfile}; then bootm ${loadaddr}; fi
++loadaddr=0x46000000
++ipaddr=192.168.1.1
++serverip=192.168.1.10
++recoveryfile=openwrt-mediatek-filogic-emplus_ews276-fit-initramfs-recovery.itb
++fipfile=openwrt-mediatek-filogic-emplus_ews276-fit-spim-nand-bl31-uboot.fip
++bl2file=openwrt-mediatek-filogic-emplus_ews276-fit-spim-nand-preloader.bin

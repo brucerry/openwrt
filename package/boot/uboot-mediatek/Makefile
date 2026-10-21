@@ -783,6 +783,19 @@ define U-Boot/mt7981_xiaomi_mi-router-wr30u
   DEPENDS:=+trusted-firmware-a-mt7981-spim-nand-ddr3
 endef
 
+define U-Boot/mt7986_emplus_ews276-fit
+  NAME:=Emplus EWS276-FIT
+  BUILD_SUBTARGET:=filogic
+  BUILD_DEVICES:=emplus_ews276-fit
+  UBOOT_CONFIG:=mt7986_emplus_ews276-fit
+  UBOOT_IMAGE:=u-boot.fip
+  BL2_BOOTDEV:=spim-nand
+  BL2_SOC:=mt7986
+  BL2_DDRTYPE:=ddr4
+  DEPENDS:=+trusted-firmware-a-mt7986-spim-nand-ddr4 \
+	+trusted-firmware-a-mt7986-ews276-fit-spim-nand-ddr4
+endef
+
 define U-Boot/mt7986_rfb
   NAME:=MT7986 Reference Board
   BUILD_SUBTARGET:=filogic
@@ -1363,6 +1376,7 @@ UBOOT_TARGETS := \
 	mt7986_xiaomi_redmi-router-ax6000 \
 	mt7986_zyxel_ex5601-t0 \
 	mt7986_zyxel_wx5600-t0 \
+	mt7986_emplus_ews276-fit \
 	mt7986_rfb \
 	mt7987_bananapi_bpi-r4-lite-emmc \
 	mt7987_bananapi_bpi-r4-lite-sdmmc \
