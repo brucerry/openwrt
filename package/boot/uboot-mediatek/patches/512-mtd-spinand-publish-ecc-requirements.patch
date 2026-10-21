@@ -1,0 +1,13 @@
+--- a/drivers/mtd/nand/spi/core.c
++++ b/drivers/mtd/nand/spi/core.c
+@@ -1936,6 +1936,10 @@
+ 	mtd->_block_isreserved = spinand_mtd_block_isreserved;
+ 	mtd->_erase = spinand_mtd_erase;
+ 
++	/* CASN layout and status callbacks consume the MTD ECC geometry. */
++	mtd->ecc_strength = nand->eccreq.strength;
++	mtd->ecc_step_size = nand->eccreq.step_size;
++
+ 	if (spinand->eccinfo.ooblayout)
+ 		mtd_set_ooblayout(mtd, spinand->eccinfo.ooblayout);
+ 	else
