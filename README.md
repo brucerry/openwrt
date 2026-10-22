@@ -19,27 +19,7 @@ provisioning. Signed and encrypted images are separate, opt-in profiles.
 
 ---
 
-## Build the Default Profile
-
-Use a GNU/Linux host with a case-sensitive filesystem and the standard
-[OpenWrt build dependencies](https://openwrt.org/docs/guide-developer/build-system/install-buildsystem).
-
-```sh
-make defconfig
-make -j1 V=s
-```
-
-The repository includes its feed sources and default configuration. Keep
-the supplied snapshot for reproducibility; `feeds update -a` fetches newer
-feed revisions and is not needed for this build.
-
-The default target is `MediaTek ARM` / `Filogic` / `Emplus EWS276-FIT`
-(`CONFIG_TARGET_PROFILE="DEVICE_emplus_ews276-fit"`). No key-generation
-step is needed for unsigned builds.
-
----
-
-## Separate Security Profiles
+## Build
 
 | Profile | Status and purpose |
 | --- | --- |
@@ -47,7 +27,18 @@ step is needed for unsigned builds.
 | `emplus_ews276-fit-signed` | Opt-in signed BL2, authenticated FIP and RSA-signed FIT |
 | `emplus_ews276-fit-encrypted` | Signed chain plus encrypted FIP and FIT payloads |
 
-To build the `signed` profile instead:
+### Unsigned Profile
+
+```sh
+make defconfig
+make -j1 V=s
+```
+
+The default target is `MediaTek ARM` / `Filogic` / `Emplus EWS276-FIT`
+(`CONFIG_TARGET_PROFILE="DEVICE_emplus_ews276-fit"`). No key-generation
+step is needed for unsigned builds.
+
+### Signed Profile
 
 ```sh
 ./scripts/gen-mtk-secureboot-keys.sh
@@ -70,13 +61,21 @@ BootROM -> signed BL2 -> authenticated FIP (BL31/U-Boot) -> RSA-signed FIT
 ```
 
 BL/FW rollback versions start at `0` in `include/mtk-anti-rollback.mk`.
-Automatic eFuse counter updates are disabled. Building or flashing signed
-images does not enable BootROM secure boot or burn anti-rollback eFuses.
+Automatic eFuse counter updates are disabled.
 
-For `encrypted` builds, prepare the additional material with
-`./scripts/gen-mtk-secureboot-keys.sh --encryption`, select only
-`Emplus EWS276-FIT (signed and encrypted)`, then run `make defconfig` and
-`make -j1 V=s`. Host OpenSSL 3 with `openssl kdf` is required.
+### Encrypted Profile
+
+```sh
+./scripts/gen-mtk-secureboot-keys.sh
+./scripts/gen-mtk-secureboot-keys.sh --encryption
+make menuconfig
+# Select only Emplus EWS276-FIT (signed and encrypted) under Target Profile.
+# Enable mtk-efuse-nl-tool-mt7986 for the Linux eFuse commands.
+make defconfig
+make -j1 V=s
+```
+
+Host OpenSSL 3 with `openssl kdf` is required.
 Existing approved keys and salts must be retained.
 When switching an existing unsigned configuration, also enable
 `mtk-efuse-nl-tool-mt7986` if its previous package exclusion remains.
@@ -86,11 +85,9 @@ AES-256-CBC for FIT kernel/rootfs or recovery initrd payloads, authenticated
 by the FIT signature. FIP nonces and FIT IVs are generated per payload.
 The installed SquashFS root is decrypted into RAM (`/dev/ram0`); the UBIFS
 writable overlay, BL2 and authenticated DTB are not encrypted.
-TF-A uses a separate Mbed TLS 3.6.7 source dependency, not target libmbedtls.
 
 Encrypted boot requires the matching device platform key through MediaTek's
-key service. Building does not program that key or any eFuse; hardware validation
-and provisioning remain separate authorized steps.
+key service.
 
 ---
 
@@ -117,11 +114,13 @@ Do not mix keys or bootloader/FIT sets from different builds.
 
 ## Full NAND Programming Image
 
-After building the default unsigned profile, run directly:
+After building profile, run directly:
 
 ```sh
 ./scripts/gen-ews276-fit-nand-image.sh
 ```
+
+Run with `-h` for more info.
 
 ---
 
@@ -133,22 +132,77 @@ access. Preserve `Factory`, the secondary `ubi_1` slot and existing NMBM
 metadata. Do not erase the whole NAND or force bootloader writes from Linux.
 
 For routine updates on an installed system from this tree, transfer the
-matching sysupgrade FIT to `/tmp`, verify its approved SHA-256 checksum, then:
+matching sysupgrade FIT to `/tmp`, then:
 
 ```sh
 IMAGE=/tmp/openwrt-mediatek-filogic-emplus_ews276-fit-squashfs-sysupgrade.itb
 sysupgrade -T "$IMAGE" && sysupgrade "$IMAGE"
 ```
 
-Use the `-signed-` filename on signed systems. RAM recovery requires
-`sysupgrade -T "$IMAGE" && sysupgrade -n "$IMAGE"`; it cannot preserve the
-installed configuration. Signed U-Boot requires signed recovery as well.
-Sysupgrade updates firmware/overlay, not BL2 or FIP.
+### Flash FIP and BL2 Through U-Boot
 
-For the validated unsigned-to-signed transition, install the signed FIT,
-then write and read back the matching FIP, and BL2 last through U-Boot.
-Verify transfer hashes, page alignment and complete partition readbacks;
-do not reset after a failed check. No eFuse write is part of this procedure.
+Use this procedure only on an installed EWS276-FIT with the NMBM partition
+layout below, stable power, an off-device NAND/OOB backup and external
+recovery access. Use one matching FIT/FIP/BL2 set from the selected profile.
+Install its FIT first as above. Signed images must use approved keys and
+compatible rollback versions; do not flash unsigned images on a board with
+BootROM secure boot enabled.
+Do not substitute encrypted images on a board without its platform key.
+Encrypted hardware boot and migration are not qualified by this procedure.
+This procedure does not provision keys or write eFuses.
+
+Reboot and interrupt autoboot. Repeat this setup each time you enter U-Boot;
+point the TFTP server at the directory containing the selected files.
+The example uses the default unsigned prefix. For signed or encrypted
+builds, replace `prefix` with the corresponding prefix listed under Artifacts:
+
+```text
+setenv ipaddr 192.168.1.1
+setenv serverip 192.168.1.10
+setenv loadaddr 0x46000000
+setenv prefix openwrt-mediatek-filogic-emplus_ews276-fit
+mtd list
+mtd bad spi-nand0
+```
+
+Confirm these partitions are under `nmbm0`; stop if the layout differs:
+
+| Partition | Start | Size |
+| --- | --- | --- |
+| `bl2` | `0x00000000` | `0x00100000` |
+| `fip` | `0x00380000` | `0x00200000` |
+
+For this BL2 update procedure, stop if any bad block is listed in the first
+1 MiB. Stop on any failed command; after erasing starts, keep power on and
+do not reset until readback succeeds or recovery is complete.
+
+**FIP first.** Paste this chain as one U-Boot command. It downloads the FIP,
+checks its size, aligns the write length to 2 KiB, backs up the old partition
+at `0x49000000`, then writes and compares the complete 2 MiB partition:
+
+```text
+mw.b ${loadaddr} 0xff 0x200000 && tftpboot ${loadaddr} ${prefix}-spim-nand-bl31-uboot.fip && test 0x${filesize} -gt 0 && test 0x${filesize} -le 0x200000 && setexpr wrlen ${filesize} + 0x7ff && setexpr wrlen ${wrlen} / 0x800 && setexpr wrlen ${wrlen} \* 0x800 && mtd read fip 0x49000000 0 0x200000 && mtd erase fip && mtd write fip ${loadaddr} 0 ${wrlen} && mtd read fip 0x47000000 0 0x200000 && cmp.b ${loadaddr} 0x47000000 0x200000
+```
+
+Expect `Total of 2097152 byte(s) were the same`. Only then run `reset`
+and verify the new BL31/U-Boot boots the installed FIT into Linux.
+
+**BL2 last.** Return to U-Boot and repeat the setup/layout checks above.
+Paste this chain as one command. It backs up the old BL2 at `0x49000000`
+and compares logical/raw reads before erasing. After writing, both complete
+1 MiB readbacks must match:
+
+```text
+mw.b ${loadaddr} 0xff 0x100000 && tftpboot ${loadaddr} ${prefix}-spim-nand-preloader.bin && test 0x${filesize} -gt 0 && test 0x${filesize} -le 0x100000 && setexpr wrlen ${filesize} + 0x7ff && setexpr wrlen ${wrlen} / 0x800 && setexpr wrlen ${wrlen} \* 0x800 && mtd read bl2 0x49000000 0 0x100000 && mtd read spi-nand0 0x48000000 0 0x100000 && cmp.b 0x49000000 0x48000000 0x100000 && mtd erase bl2 && mtd write bl2 ${loadaddr} 0 ${wrlen} && mtd read bl2 0x48000000 0 0x100000 && cmp.b ${loadaddr} 0x48000000 0x100000 && mtd read spi-nand0 0x48000000 0 0x100000 && cmp.b ${loadaddr} 0x48000000 0x100000
+```
+
+Expect three successful 1 MiB comparisons: one before writing and two after.
+RAM backups are lost on reset or power loss; they do not replace the
+off-device backup. After all checks pass, test `reset` and, when possible,
+a cold boot. Check the BL2/BL31/U-Boot banners, overlay and Ethernet; signed
+and encrypted boots must also pass FIT signature checks. On those profiles,
+use the read-only eFuse checks below to confirm enable flags remain unchanged.
+The unsigned profile does not include the Linux eFuse module/tool.
 
 ---
 
@@ -250,13 +304,15 @@ signed BL31 libraries, including the separately backported FW counter fields.
 ubus call system board
 df -h / /overlay
 cat /sys/class/net/eth0/address
+ip a
 iw dev
 ```
 
-Validated on the development board: unsigned and signed cold boot,
-configuration-preserving installed upgrades, overlay persistence, Ethernet
-ping and both AP interfaces starting. Signed boots verify
-`sha256,rsa2048:fit_key` and firmware rollback version `0`.
+Validated on the development board: configuration-preserving installed
+upgrades, overlay persistence, Ethernet ping and both AP interfaces starting.
+Earlier unsigned and signed builds passed cold boot.
+Signed boots verify `sha256,rsa2048:fit_key` and firmware
+rollback version `0`.
 
 ---
 
