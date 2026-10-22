@@ -2,6 +2,7 @@
 
 /dts-v1/;
 #include <dt-bindings/gpio/gpio.h>
+#include <dt-bindings/input/input.h>
 #include <dt-bindings/pinctrl/mt65xx.h>
 #include "mt7986a.dtsi"
 
@@ -24,6 +25,18 @@
 	memory@40000000 {
 		device_type = "memory";
 		reg = <0 0x40000000 0 0x20000000>;
+	};
+
+	keys {
+		compatible = "gpio-keys";
+
+		reset {
+			label = "reset";
+			linux,code = <KEY_RESTART>;
+			/* Schematic GPIO_4 (ball L21) is controller GPIO9. */
+			gpios = <&pio 9 GPIO_ACTIVE_LOW>;
+			debounce-interval = <50>;
+		};
 	};
 };
 
