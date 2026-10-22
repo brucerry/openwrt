@@ -1,5 +1,5 @@
 #!/bin/sh
-# Assemble a raw SPI-NAND image for the Emplus EHR330 from build artifacts.
+# Assemble a logical SPI-NAND image for the Emplus EHR330 from build artifacts.
 # The result is written with an external programmer to recover a device whose
 # BootROM already enforces secure boot and whose BL2 no longer loads.
 set -e
@@ -12,6 +12,8 @@ PREFIX="openwrt-mediatek-filogic-emplus_ehr330-signed"
 HOST_BIN="$TOPDIR/staging_dir/host/bin"
 NAND_SIZE=$((256 * 1024 * 1024))
 NAND_PARTNUMBER="MX35LF2GE4AD-Z4I"
+NMBM_START=$((0x0f000000))
+PARTITIONS_END=$((0x0e2e0000))
 
 # Offsets and sizes must match the "partitions" node of the board DTS.
 BL2_OFFSET=$((0x0));         BL2_SIZE=$((0x100000))
@@ -51,6 +53,15 @@ Usage: $0 [options]
 
 Factory holds per-device calibration and MAC addresses. It cannot be generated
 from build output, so restore it from the backup taken from the same unit.
+
+Output is 256 MiB main-area data, not a physical snapshot. No NMBM map is
+embedded; rebuilt BL2/U-Boot initialize it from the target bad-block markers.
+Program only the first $(printf '%#x' "$PARTITIONS_END") logical bytes, skipping bad physical
+blocks without consuming source blocks or restarting at partition boundaries.
+Erased source blocks still consume logical addresses. Leave physical
+0x0f000000..0x0fffffff erased for NMBM and preserve bad-block markers.
+The .layout.json sidecar records this programming contract. BootROM BL2
+placement and programmer ECC/OOB still require hardware qualification.
 EOF
 }
 
@@ -93,6 +104,7 @@ fi
 PATH="$HOST_BIN:$PATH"
 export PATH
 command -v ubinize >/dev/null || { echo "ubinize not found in $HOST_BIN" >&2; exit 1; }
+command -v python3 >/dev/null || { echo "python3 not found" >&2; exit 1; }
 
 workdir="$(mktemp -d)"
 trap 'rm -rf "$workdir"' EXIT
@@ -141,14 +153,45 @@ place ubi "$workdir/ubi.img" "$UBI_OFFSET" "$UBI_SIZE"
 [ -n "$userconfig" ] && place userconfig "$userconfig" "$USERCONFIG_OFFSET" "$USERCONFIG_SIZE"
 [ -n "$crashdump" ] && place crashdump "$crashdump" "$CRASHDUMP_OFFSET" "$CRASHDUMP_SIZE"
 
+python3 - "$outfile.layout.json" "$PREFIX" "$NAND_SIZE" "$PARTITIONS_END" "$NMBM_START" <<'PY'
+import json
+import sys
+output, prefix, size, end, management = sys.argv[1:]
+layout = {
+    "format": "ehr330-nmbm-logical-v1",
+    "artifact_prefix": prefix,
+    "image_bytes": int(size),
+    "page_bytes": 2048,
+    "eraseblock_bytes": 131072,
+    "oob_included": False,
+    "program_logical_bytes": int(end),
+    "physical_data_limit_exclusive": int(management),
+    "bad_block_policy": "global-skip-without-consuming-source",
+    "nmbm_metadata": "erased; initialized on target",
+    "requires": ["freshly erased good blocks; preserve bad-block markers",
+                 "erased source blocks still consume logical addresses",
+                 "rebuilt BL2 CREATE|READ_ONLY; U-Boot CREATE",
+                 "MT7987 BootROM-compatible BL2 placement and ECC/OOB",
+                 "enough good data and management blocks"],
+}
+with open(output, "w", encoding="ascii") as destination:
+    json.dump(layout, destination, indent=2)
+    destination.write("\n")
+PY
+
 sha256sum "$outfile" > "$outfile.sha256sum"
 cat "$outfile.sha256sum"
 
 cat >&2 <<EOF
 
-The image contains main page data only, without OOB. Program it with the
-"$NAND_PARTNUMBER" settings used for the original dump, let the programmer generate ECC,
-and enable bad-block handling. This image does not contain NMBM metadata; do not
-use it to overwrite a device's existing NMBM mapping table. Partition offsets
-assume no bad blocks below $(printf '%#x' $((CRASHDUMP_OFFSET + CRASHDUMP_SIZE))).
+The image contains logical main-area data only, without OOB/ECC or an NMBM map.
+Use the correct "$NAND_PARTNUMBER" ECC/OOB settings and follow $outfile.layout.json.
+Program $(printf '%#x' "$PARTITIONS_END") logical bytes as one good-block stream, skipping bad
+physical blocks without consuming source data. Erased source blocks must still
+consume logical addresses. Do not stream the erased tail into physical NMBM
+space $(printf '%#x' "$NMBM_START")..0x0fffffff. The partition span needs
+$((PARTITIONS_END / 131072)) good blocks below that boundary and sufficient good management blocks.
+Rebuilt BL2/U-Boot initialize missing maps from the actual chip; preserve valid
+maps for routine updates. Recreating a lost map cannot recover historical
+grown-bad-block remappings. BootROM/programmer hardware qualification is pending.
 EOF
