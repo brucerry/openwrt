@@ -10,6 +10,11 @@ UBOOT_USE_INTREE_DTC:=1
 include $(INCLUDE_DIR)/u-boot.mk
 include $(INCLUDE_DIR)/package.mk
 include $(INCLUDE_DIR)/host-build.mk
+include $(TOPDIR)/package/boot/arm-trusted-firmware-mediatek/secure-boot.mk
+
+PKG_FILE_DEPENDS += $(if $(filter mt7986_emplus_ews276-fit-signed,$(BUILD_VARIANT)),\
+	$(MTK_TBB_KEY_DIR) $(TOPDIR)/package/boot/arm-trusted-firmware-mediatek \
+	$(INCLUDE_DIR)/mtk-anti-rollback.mk)
 
 MT7621_LOWLEVEL_PRELOADER_URL:=https://raw.githubusercontent.com/mtk-openwrt/mt7621-lowlevel-preloader/a03b07c60bf1ba4add9b671d32caa102fe948180/
 
@@ -37,6 +42,11 @@ define U-Boot/Default
   BUILD_TARGET:=mediatek
   UBOOT_IMAGE:=u-boot-mtk.bin
   HIDDEN:=1
+  MTK_EFUSE_CMD:=
+  TFA_TBB_VARIANT:=
+  FIT_KEY_DIR:=
+  FIT_KEY_NAME:=
+  FIT_KEY_ALG:=
 endef
 
 define U-Boot/mt7620_rfb
@@ -893,6 +903,18 @@ define U-Boot/mt7986_bananapi_bpi-r3-mini-snand
   DEPENDS:=+trusted-firmware-a-mt7986-spim-nand-ubi-ddr4
 endef
 
+define U-Boot/mt7986_emplus_ews276-fit-signed
+  $(call U-Boot/mt7986_emplus_ews276-fit)
+  NAME:=Emplus EWS276-FIT (signed)
+  BUILD_DEVICES:=emplus_ews276-fit-signed
+  MTK_EFUSE_CMD:=1
+  DEPENDS:=+trusted-firmware-a-mt7986-ews276-fit-spim-nand-ddr4-signed
+  TFA_TBB_VARIANT:=mt7986-ews276-fit-spim-nand-ddr4-signed
+  FIT_KEY_DIR:=$(MTK_TBB_KEY_DIR)
+  FIT_KEY_NAME:=fit_key
+  FIT_KEY_ALG:=sha256,rsa2048
+endef
+
 define U-Boot/mt7986_glinet_gl-mt6000
   NAME:=GL.iNet GL-MT6000
   BUILD_SUBTARGET:=filogic
@@ -1377,6 +1399,7 @@ UBOOT_TARGETS := \
 	mt7986_zyxel_ex5601-t0 \
 	mt7986_zyxel_wx5600-t0 \
 	mt7986_emplus_ews276-fit \
+	mt7986_emplus_ews276-fit-signed \
 	mt7986_rfb \
 	mt7987_bananapi_bpi-r4-lite-emmc \
 	mt7987_bananapi_bpi-r4-lite-sdmmc \
@@ -1400,14 +1423,59 @@ UBOOT_TARGETS := \
 	mt7988_rfb-emmc \
 	mt7988_rfb-sd
 
-UBOOT_CUSTOMIZE_CONFIG := \
+UBOOT_CUSTOMIZE_CONFIG = \
 	--disable TOOLS_KWBIMAGE \
 	--disable TOOLS_LIBCRYPTO \
-	--disable TOOLS_MKEFICAPSULE
+	--disable TOOLS_MKEFICAPSULE \
+	$(if $(TFA_TBB_VARIANT),--enable FIT_SIGNATURE --enable RSA --enable RSA_VERIFY \
+		--enable MT7986_EWS276_FIT_SECURE_BOOT --disable LEGACY_IMAGE_FORMAT \
+		--enable MTK_ANTI_ROLLBACK --disable MTK_AR_UPDATE_AR_VER \
+		--disable CMD_BOOTI --disable CMD_BOOTZ --disable CMD_BOOTEFI \
+		--disable CMD_ELF --disable CMD_GO) \
+	$(if $(MTK_EFUSE_CMD),--enable MTK_EFUSE_CMD)
 
 ifdef CONFIG_TARGET_mediatek
 UBOOT_MAKE_FLAGS += $(UBOOT_IMAGE:.fip=.bin)
 endif
+
+TFA_TBB_DIR = $(firstword $(wildcard $(BUILD_DIR)/arm-trusted-firmware-mediatek-$(TFA_TBB_VARIANT)/arm-trusted-firmware-mediatek-* ))
+TFA_TBB_RELEASE = $(TFA_TBB_DIR)/build/$(BL2_SOC)/release
+MTK_TBB_BUILD_DIR=$(TFA_TBB_DIR)
+
+# Generate certificates only after the final U-Boot contains its required FIT key.
+define Build/tbb-fip-image
+	$(MTK_TBB_CHECK_KEYS)
+	test -n "$(TFA_TBB_DIR)" && \
+	rm -f $(TFA_TBB_RELEASE)/fip.bin $(TFA_TBB_RELEASE)/trusted_key.crt \
+		$(TFA_TBB_RELEASE)/soc_fw_key.crt $(TFA_TBB_RELEASE)/soc_fw_content.crt \
+		$(TFA_TBB_RELEASE)/nt_fw_key.crt $(TFA_TBB_RELEASE)/nt_fw_content.crt && \
+	$(MAKE) -C $(TFA_TBB_DIR) \
+		PLAT=$(BL2_SOC) BUILD_BASE=$(TFA_TBB_DIR)/build DEBUG=0 \
+		BOOT_DEVICE=spim-nand DRAM_USE_DDR4=1 NMBM=1 NMBM_NO_CREATE=1 \
+		$(MTK_TBB_FLAGS) \
+		BL31=$(TFA_TBB_RELEASE)/bl31.bin BL33=$(PKG_BUILD_DIR)/u-boot.bin fip && \
+	$(STAGING_DIR_HOST)/bin/fiptool info $(TFA_TBB_RELEASE)/fip.bin > $(PKG_BUILD_DIR)/fip.info && \
+	grep -q '^Trusted key certificate:' $(PKG_BUILD_DIR)/fip.info && \
+	grep -q '^SoC Firmware key certificate:' $(PKG_BUILD_DIR)/fip.info && \
+	grep -q '^SoC Firmware content certificate:' $(PKG_BUILD_DIR)/fip.info && \
+	grep -q '^Non-Trusted Firmware key certificate:' $(PKG_BUILD_DIR)/fip.info && \
+	grep -q '^Non-Trusted Firmware content certificate:' $(PKG_BUILD_DIR)/fip.info && \
+	$(CP) $(TFA_TBB_RELEASE)/fip.bin $(PKG_BUILD_DIR)/u-boot.fip
+endef
+
+define Build/fit-embed-key
+	test -s "$(FIT_KEY_DIR)/$(FIT_KEY_NAME).key" && test -s "$(FIT_KEY_DIR)/$(FIT_KEY_NAME).crt"
+	mkdir -p $(PKG_BUILD_DIR)/fit-key-embed
+	sed -e 's/@FIT_KEY_ALG@/$(FIT_KEY_ALG)/g' -e 's/@FIT_KEY_NAME@/$(FIT_KEY_NAME)/g' \
+		$(CURDIR)/files/fit-key-anchor.its > $(PKG_BUILD_DIR)/fit-key-embed/anchor.its
+	PATH=$(PKG_BUILD_DIR)/scripts/dtc:$(STAGING_DIR_HOST)/bin:$(PATH) \
+		$(STAGING_DIR_HOST)/bin/mkimage \
+		-f $(PKG_BUILD_DIR)/fit-key-embed/anchor.its \
+		-k $(FIT_KEY_DIR) -K $(PKG_BUILD_DIR)/dts/dt.dtb -r \
+		$(PKG_BUILD_DIR)/fit-key-embed/anchor.itb
+	$(PKG_BUILD_DIR)/scripts/dtc/dtc -I dtb -O dts $(PKG_BUILD_DIR)/dts/dt.dtb 2>/dev/null | grep -q 'required = "conf";'
+	$(call Build/Compile/U-Boot)
+endef
 
 define Build/fip-image
 	$(if $(FIP_COMPRESS),\
@@ -1434,12 +1502,20 @@ endif
 define Build/Configure
 	$(call Build/Configure/U-Boot)
 	sed -i 's/CONFIG_TOOLS_LIBCRYPTO=y/# CONFIG_TOOLS_LIBCRYPTO is not set/' $(PKG_BUILD_DIR)/.config
+	$(if $(TFA_TBB_VARIANT),sed -i 's/emplus_ews276-fit-\(initramfs\|spim\|squashfs\)/emplus_ews276-fit-signed-\1/g' $(PKG_BUILD_DIR)/defenvs/emplus_ews276-fit_env)
 endef
 
 define Build/Compile
 	$(call Build/Compile/U-Boot)
+ifneq ($(FIT_KEY_DIR),)
+	$(call Build/fit-embed-key)
+endif
 ifeq ($(UBOOT_IMAGE),u-boot.fip)
+ifneq ($(TFA_TBB_VARIANT),)
+	$(call Build/tbb-fip-image)
+else
 	$(call Build/fip-image)
+endif
 endif
 endef
 

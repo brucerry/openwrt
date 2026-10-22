@@ -1,0 +1,24 @@
+/dts-v1/;
+/ {
+	description = "FIT verification key anchor";
+	images {
+		data-1 {
+			data = "key anchor";
+			type = "firmware";
+			arch = "arm64";
+			compression = "none";
+			hash-1 { algo = "sha256"; };
+		};
+	};
+	configurations {
+		default = "config-1";
+		config-1 {
+			firmware = "data-1";
+			signature-1 {
+				algo = "@FIT_KEY_ALG@";
+				key-name-hint = "@FIT_KEY_NAME@";
+				sign-images = "firmware";
+			};
+		};
+	};
+};

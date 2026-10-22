@@ -1,0 +1,43 @@
+--- a/arch/arm/mach-mediatek/Kconfig
++++ b/arch/arm/mach-mediatek/Kconfig
+@@ -121,6 +121,14 @@
+ 
+ endchoice
+ 
++config MT7986_EWS276_FIT_SECURE_BOOT
++	bool "Require signed EWS276-FIT boot configurations"
++	depends on MT7986_EWS276_FIT
++	select FIT_SIGNATURE
++	help
++	  Require configuration verification even if verify=no is saved in the
++	  environment. This does not lock down the interactive recovery console.
++
+ config MT7986_EWS276_FIT
+ 	bool "Emplus EWS276-FIT NAND layout"
+ 	depends on TARGET_MT7986
+--- a/boot/bootm.c
++++ b/boot/bootm.c
+@@ -243,7 +243,8 @@
+ static int bootm_start(void)
+ {
+ 	memset((void *)&images, 0, sizeof(images));
+-	images.verify = env_get_yesno("verify");
++	images.verify = IS_ENABLED(CONFIG_MT7986_EWS276_FIT_SECURE_BOOT) ||
++			env_get_yesno("verify");
+ 
+ 	bootstage_mark_name(BOOTSTAGE_ID_BOOTM_START, "bootm_start");
+ 	images.state = BOOTM_STATE_START;
+--- a/boot/image-fit.c
++++ b/boot/image-fit.c
+@@ -2133,6 +2133,11 @@
+ 	}
+ 	bootstage_mark(bootstage_id + BOOTSTAGE_SUB_FORMAT_OK);
+ 	if (fit_uname) {
++		if (!tools_build() &&
++		    IS_ENABLED(CONFIG_MT7986_EWS276_FIT_SECURE_BOOT) &&
++		    image_type == IH_TYPE_KERNEL) {
++			return -EACCES;
++		}
+ 		/* get FIT component image node offset */
+ 		bootstage_mark(bootstage_id + BOOTSTAGE_SUB_UNIT_NAME);
+ 		noffset = fit_image_get_node(fit, fit_uname);
