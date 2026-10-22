@@ -1,6 +1,8 @@
 DTS_DIR := $(DTS_DIR)/mediatek
 DEVICE_VARS += SUPPORTED_TELTONIKA_DEVICES
 DEVICE_VARS += SUPPORTED_TELTONIKA_HW_MODS
+include $(INCLUDE_DIR)/mtk-anti-rollback.mk
+DEVICE_VARS += FIT_KEY_DIR FIT_KEY_NAME FIT_KEY_ALG FIT_AR_VER
 
 define Image/Prepare
 	# For UBI we want only one extra block
@@ -1639,6 +1641,10 @@ endef
 TARGET_DEVICES += edgecore_eap111
 
 define Device/emplus_ews276-fit
+  FIT_KEY_DIR :=
+  FIT_KEY_NAME :=
+  FIT_KEY_ALG :=
+  FIT_AR_VER :=
   DEVICE_VENDOR := Emplus
   DEVICE_MODEL := EWS276-FIT
   DEVICE_DTS := mt7986a-emplus-ews276-fit mt7986a-emplus-ews276-fit-initramfs
@@ -1664,6 +1670,22 @@ define Device/emplus_ews276-fit
   ARTIFACT/spim-nand-bl31-uboot.fip := mt7986-bl31-uboot emplus_ews276-fit
 endef
 TARGET_DEVICES += emplus_ews276-fit
+
+define Device/emplus_ews276-fit-signed
+  $(call Device/emplus_ews276-fit)
+  DEVICE_MODEL := EWS276-FIT (signed)
+  DEVICE_PACKAGES += mtk-efuse-nl-tool-mt7986
+  SUPPORTED_DEVICES := emplus,ews276-fit
+  FIT_KEY_DIR := $(TOPDIR)/keys/mtk-secure-boot
+  FIT_KEY_NAME := fit_key
+  FIT_KEY_ALG := sha256,rsa2048
+  FIT_AR_VER := $(MTK_FW_AR_VER)
+  ARTIFACTS += bl2.img.signkeyhash
+  ARTIFACT/spim-nand-preloader.bin := mt7986-bl2 ews276-fit-spim-nand-ddr4-signed
+  ARTIFACT/spim-nand-bl31-uboot.fip := mt7986-bl31-uboot emplus_ews276-fit-signed
+  ARTIFACT/bl2.img.signkeyhash := copy-file $(STAGING_DIR_IMAGE)/mt7986-ews276-fit-spim-nand-ddr4-signed-bl2.img.signkeyhash
+endef
+TARGET_DEVICES += emplus_ews276-fit-signed
 
 define Device/elecom_wrc-x3000gs3
   DEVICE_VENDOR := ELECOM
