@@ -2,7 +2,7 @@
 
 OpenWrt 25.12 support for the Emplus EWS276-FIT. The supplied `.config`
 builds the **unsigned development profile** without signing keys or eFuse
-provisioning. Signed images are a separate, opt-in profile.
+provisioning. Signed and encrypted images are separate, opt-in profiles.
 
 ---
 
@@ -45,6 +45,7 @@ step is needed for unsigned builds.
 | --- | --- |
 | `emplus_ews276-fit` | Default unsigned development images |
 | `emplus_ews276-fit-signed` | Opt-in signed BL2, authenticated FIP and RSA-signed FIT |
+| `emplus_ews276-fit-encrypted` | Signed chain plus encrypted FIP and FIT payloads |
 
 To build the `signed` profile instead:
 
@@ -52,6 +53,7 @@ To build the `signed` profile instead:
 ./scripts/gen-mtk-secureboot-keys.sh
 make menuconfig
 # Select only Emplus EWS276-FIT (signed) under Target Profile.
+# Enable mtk-efuse-nl-tool-mt7986 for the Linux eFuse commands.
 make defconfig
 make -j1 V=s
 ```
@@ -71,6 +73,25 @@ BL/FW rollback versions start at `0` in `include/mtk-anti-rollback.mk`.
 Automatic eFuse counter updates are disabled. Building or flashing signed
 images does not enable BootROM secure boot or burn anti-rollback eFuses.
 
+For `encrypted` builds, prepare the additional material with
+`./scripts/gen-mtk-secureboot-keys.sh --encryption`, select only
+`Emplus EWS276-FIT (signed and encrypted)`, then run `make defconfig` and
+`make -j1 V=s`. Host OpenSSL 3 with `openssl kdf` is required.
+Existing approved keys and salts must be retained.
+When switching an existing unsigned configuration, also enable
+`mtk-efuse-nl-tool-mt7986` if its previous package exclusion remains.
+
+The `encrypted` profile uses AES-GCM for BL31/U-Boot and `tee_aes256`
+AES-256-CBC for FIT kernel/rootfs or recovery initrd payloads, authenticated
+by the FIT signature. FIP nonces and FIT IVs are generated per payload.
+The installed SquashFS root is decrypted into RAM (`/dev/ram0`); the UBIFS
+writable overlay, BL2 and authenticated DTB are not encrypted.
+TF-A uses a separate Mbed TLS 3.6.7 source dependency, not target libmbedtls.
+
+Encrypted boot requires the matching device platform key through MediaTek's
+key service. Building does not program that key or any eFuse; hardware validation
+and provisioning remain separate authorized steps.
+
 ---
 
 ## Artifacts
@@ -79,6 +100,7 @@ Images are written to `bin/targets/mediatek/filogic/` with these prefixes:
 
 - Unsigned: `openwrt-mediatek-filogic-emplus_ews276-fit`
 - Signed: `openwrt-mediatek-filogic-emplus_ews276-fit-signed`
+- Encrypted: `openwrt-mediatek-filogic-emplus_ews276-fit-encrypted`
 
 | Filename suffix | Purpose |
 | --- | --- |
@@ -86,7 +108,7 @@ Images are written to `bin/targets/mediatek/filogic/` with these prefixes:
 | `-squashfs-sysupgrade.itb` | Persistent firmware upgrade |
 | `-spim-nand-bl31-uboot.fip` | BL31/U-Boot bootloader package |
 | `-spim-nand-preloader.bin` | BL2 bootloader |
-| `-bl2.img.signkeyhash` | Signed profile only: 32-byte BootROM key-hash reference |
+| `-bl2.img.signkeyhash` | Signed/encrypted profiles: 32-byte BootROM key-hash reference |
 
 Build one profile at a time and archive its artifacts before switching.
 Do not mix keys or bootloader/FIT sets from different builds.
@@ -122,7 +144,7 @@ do not reset after a failed check. No eFuse write is part of this procedure.
 
 ## MT7986 eFuse Command Reference
 
-The **signed** profile includes U-Boot `efuse`, Linux `mtk-efuse-tool-mt7986`
+The **signed and encrypted** profiles include U-Boot `efuse`, Linux `mtk-efuse-tool-mt7986`
 and `kmod-mtk-efuse-nl-drv`.
 Both interfaces require a compatible BL31 eFuse service and access the same
 physical OTP fields. The Linux module is loaded manually.
