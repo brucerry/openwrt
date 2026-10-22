@@ -1473,7 +1473,7 @@ define Build/tbb-fip-image
 	$(MAKE) -C $(TFA_TBB_DIR) \
 		PLAT=$(BL2_SOC) BUILD_BASE=$(TFA_TBB_DIR)/build DEBUG=0 \
 		$(if $(MTK_FW_ENCRYPT),BUILD_PLAT=$(TFA_TBB_RELEASE) ENCTOOL=$(TFA_TBB_RELEASE)/tools/encrypt_fw/encrypt_fw) \
-		BOOT_DEVICE=spim-nand DRAM_USE_DDR4=1 NMBM=1 NMBM_NO_CREATE=1 \
+		BOOT_DEVICE=spim-nand DRAM_USE_DDR4=1 NMBM=1 NMBM_NO_CREATE=0 \
 		$(MTK_TBB_FLAGS) \
 		BL31=$(TFA_TBB_RELEASE)/bl31.bin BL33=$(PKG_BUILD_DIR)/u-boot.bin fip && \
 	$(STAGING_DIR_HOST)/bin/fiptool info $(TFA_TBB_RELEASE)/fip.bin > $(PKG_BUILD_DIR)/fip.info && \

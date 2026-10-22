@@ -381,7 +381,7 @@ define Trusted-Firmware-A/mt7986-spim-nand-ddr4
 endef
 
 define Trusted-Firmware-A/mt7986-ews276-fit-spim-nand-ddr4
-  NAME:=Emplus EWS276-FIT (SPI-NAND via SPIM, DDR4, existing NMBM)
+  NAME:=Emplus EWS276-FIT (SPI-NAND via SPIM, DDR4, NMBM)
   BOOT_DEVICE:=spim-nand
   BUILD_SUBTARGET:=filogic
   BUILD_DEVICES:=emplus_ews276-fit
@@ -389,7 +389,7 @@ define Trusted-Firmware-A/mt7986-ews276-fit-spim-nand-ddr4
   DDR_TYPE:=ddr4
   NAND_TYPE:=spim:2k+64
   NMBM:=1
-  NMBM_NO_CREATE:=1
+  NMBM_NO_CREATE:=0
 endef
 
 define Trusted-Firmware-A/mt7986-spim-nand-ubi-ddr4

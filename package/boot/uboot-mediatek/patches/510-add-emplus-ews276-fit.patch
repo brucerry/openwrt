@@ -10,7 +10,7 @@
 +	select NMBM
 +	select NMBM_MTD
 +	help
-+	  Attach the existing vendor NMBM mapping without creating a new one.
++	  Attach NMBM or initialize missing maps using chip bad-block markers.
 +
  config SYS_BOARD
  	string "Board name"
@@ -31,8 +31,8 @@
  	}
  
 +#ifdef CONFIG_MT7986_EWS276_FIT
-+	/* Preserve the vendor mapping; absence is a recovery error. */
-+	ret = nmbm_attach_mtd(lower, NMBM_F_EMPTY_PAGE_ECC_OK,
++	/* Reuse valid mappings; initialize blank chips from their bad blocks. */
++	ret = nmbm_attach_mtd(lower, NMBM_F_CREATE | NMBM_F_EMPTY_PAGE_ECC_OK,
 +			      1, 256, &upper);
 +#else
  	ret = nmbm_attach_mtd(lower,
