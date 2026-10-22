@@ -12,7 +12,7 @@ provisioning. Signed and encrypted images are separate, opt-in profiles.
 | --- | --- |
 | SoC | MediaTek MT7986A |
 | Memory | 512 MiB DDR4 |
-| Flash | Winbond W25N02LV, 256 MiB SPI-NAND with existing NMBM mapping |
+| Flash | Winbond W25N02LV, 256 MiB SPI-NAND with NMBM bad-block management |
 | Ethernet | One GPY211C 2.5GbE port on `eth0` |
 | Wi-Fi | Integrated MT7986 dual-band 2.4/5 GHz radio |
 | Console | UART0, 115200 8N1 |
@@ -112,6 +112,16 @@ Images are written to `bin/targets/mediatek/filogic/` with these prefixes:
 
 Build one profile at a time and archive its artifacts before switching.
 Do not mix keys or bootloader/FIT sets from different builds.
+
+---
+
+## Full NAND Programming Image
+
+After building the default unsigned profile, run directly:
+
+```sh
+./scripts/gen-ews276-fit-nand-image.sh
+```
 
 ---
 
