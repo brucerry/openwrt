@@ -698,9 +698,9 @@ define U-Boot/mt7987_emplus_ehr330_unsigned
   UBOOT_CONFIG:=mt7987a_emplus_ehr330
   UBOOT_EHR330_ENV_IMAGE_PROFILE:=emplus_ehr330_unsigned
   UBOOT_IMAGE:=u-boot.fip
-  BL2_BOOTDEV:=spim-nand0
+  BL2_BOOTDEV:=ehr330-unsigned
   BL2_SOC:=mt7987
-  DEPENDS:=+trusted-firmware-a-mt7987-spim-nand0
+  DEPENDS:=+trusted-firmware-a-mt7987-ehr330-unsigned
 endef
 
 # Plain/unsigned counterpart: shared non-secure TF-A, no FIT signing.
@@ -1536,6 +1536,7 @@ define Build/tbb-fip-image
     BUILD_PLAT=$(TFA_TBB_RELEASE) OPENSSL_DIR=/usr DEBUG=0 all &&) \
   $(MAKE) -C $(TFA_TBB_DIR) \
     PLAT=$(TFA_TBB_PLAT) BUILD_BASE=$(TFA_TBB_DIR)/build DEBUG=0 \
+    $(if $(filter mt7987-ehr330 mt7987-ehr330-encrypted,$(TFA_TBB_VARIANT)),BOOT_DEVICE=spim-nand SPIM_CTRL=0 NMBM=1 NMBM_MAX_RATIO=1 NMBM_MAX_RESERVED_BLOCKS=128) \
     TRUSTED_BOARD_BOOT=1 GENERATE_COT=1 E=0 \
     MBEDTLS_DIR=$(TFA_TBB_DIR)/mbedtls-tfa-3.6.7 \
     ROT_KEY=$(TOPDIR)/keys/mtk-secure-boot/fip_private_key.pem \

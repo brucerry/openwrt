@@ -62,6 +62,9 @@ define Trusted-Firmware-A/Default
   DDR4_4BG_MODE:=
   DDR_TYPE:=
   NAND_TYPE:=
+  NMBM:=
+  NMBM_MAX_RATIO:=
+  NMBM_MAX_RESERVED_BLOCKS:=
   BOARD_QFN:=
   DRAM_USE_COMB:=
   RAM_BOOT_UART_DL:=
@@ -554,22 +557,29 @@ define Trusted-Firmware-A/mt7987-spim-nand0
   SPIM_CTRL:=0
 endef
 
-define Trusted-Firmware-A/mt7987-ehr330
-  NAME:=Emplus EHR330 (SPI-NAND via SPIM, secure boot)
+define Trusted-Firmware-A/mt7987-ehr330-unsigned
+  NAME:=Emplus EHR330 (SPI-NAND via SPIM, unsigned)
   BOOT_DEVICE:=spim-nand
   BUILD_SUBTARGET:=filogic
+  BUILD_DEVICES:=emplus_ehr330_unsigned
   PLAT:=mt7987
   SPIM_CTRL:=0
+  NMBM:=1
+  NMBM_MAX_RATIO:=1
+  NMBM_MAX_RESERVED_BLOCKS:=128
+endef
+
+define Trusted-Firmware-A/mt7987-ehr330
+  $(call Trusted-Firmware-A/mt7987-ehr330-unsigned)
+  NAME:=Emplus EHR330 (SPI-NAND via SPIM, secure boot)
+  BUILD_DEVICES:=emplus_ehr330
   TFA_TRUSTED_BOARD_BOOT:=1
 endef
 
 define Trusted-Firmware-A/mt7987-ehr330-encrypted
+  $(call Trusted-Firmware-A/mt7987-ehr330)
   NAME:=Emplus EHR330 (SPI-NAND via SPIM, secure boot, encrypted FIP)
-  BOOT_DEVICE:=spim-nand
-  BUILD_SUBTARGET:=filogic
-  PLAT:=mt7987
-  SPIM_CTRL:=0
-  TFA_TRUSTED_BOARD_BOOT:=1
+  BUILD_DEVICES:=emplus_ehr330_encrypted
   TFA_ENCRYPTION_OVERLAY:=mt7987-encrypted
   TFA_PLATFORM_KEY_LIB:=plat/mediatek/apsoc_common/img_dec/roe/release/mtk_plat_key.a
   TFA_PLATFORM_KEY_LIB_HASH:=ca19175ab382621d7b60c86a0b594d1f3d828e4e0e3ef8b856d55293747c41f7
@@ -834,6 +844,7 @@ TFA_TARGETS:= \
 	mt7987-sdmmc-comb \
 	mt7987-sdmmc-ddr4-4bg \
 	mt7987-spim-nand0 \
+  mt7987-ehr330-unsigned \
   mt7987-ehr330 \
   mt7987-ehr330-encrypted \
 	mt7987-spim-nand0-ubi-comb \
@@ -908,6 +919,9 @@ TFA_MAKE_FLAGS += \
 	$(if $(findstring ddr4,$(DDR_TYPE)),DRAM_USE_DDR4=1) \
 	$(if $(BOARD_QFN),BOARD_QFN=1,BOARD_BGA=1) \
 	$(if $(NAND_TYPE),NAND_TYPE=$(NAND_TYPE)) \
+	$(if $(NMBM),NMBM=$(NMBM)) \
+	$(if $(NMBM_MAX_RATIO),NMBM_MAX_RATIO=$(NMBM_MAX_RATIO)) \
+	$(if $(NMBM_MAX_RESERVED_BLOCKS),NMBM_MAX_RESERVED_BLOCKS=$(NMBM_MAX_RESERVED_BLOCKS)) \
 	HAVE_DRAM_OBJ_FILE=yes \
 	$(if $(DDR3_FLYBY),DDR3_FLYBY=1) \
 	$(if $(DDR3_FREQ_1866),DDR3_FREQ_1866=1) \

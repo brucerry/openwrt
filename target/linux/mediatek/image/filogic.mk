@@ -4071,7 +4071,7 @@ define Device/emplus_ehr330_unsigned
   FIT_KEY_NAME :=
   FIT_KEY_ALG :=
   ARTIFACTS := spim-nand-preloader.bin spim-nand-bl31-uboot.fip
-  ARTIFACT/spim-nand-preloader.bin := mt7987-bl2 spim-nand0
+  ARTIFACT/spim-nand-preloader.bin := mt7987-bl2 ehr330-unsigned
   ARTIFACT/spim-nand-bl31-uboot.fip := mt7987-bl31-uboot emplus_ehr330_unsigned
 endef
 TARGET_DEVICES += emplus_ehr330_unsigned
