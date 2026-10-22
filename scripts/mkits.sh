@@ -36,7 +36,10 @@ usage() {
 	printf "\n\t-o ==> create output file 'its_file'"
 	printf "\n\t-O ==> create config with dt overlay 'name:dtb'"
 	printf "\n\t-s ==> set FDT load address to 'addr' (hex)"
-	printf "\n\t\t(can be specified more than once)\n"
+	printf "\n\t\t(can be specified more than once)"
+	printf "\n\t-K ==> sign images, using key-name-hint 'name'"
+	printf "\n\t-G ==> signing algorithm to use with -K, e.g. sha256,rsa2048\n"
+	printf "\n\t-R ==> firmware anti-rollback version (0 through 64)\n"
 	exit 1
 }
 
@@ -49,7 +52,7 @@ LOADABLES=
 DTOVERLAY=
 DTADDR=
 
-while getopts ":A:a:c:C:D:d:e:f:i:k:l:n:o:O:v:r:s:H:" OPTION
+while getopts ":A:a:c:C:D:d:e:f:i:k:l:n:o:O:v:r:s:H:K:G:R:" OPTION
 do
 	case $OPTION in
 		A ) ARCH=$OPTARG;;
@@ -70,10 +73,26 @@ do
 		s ) FDTADDR=$OPTARG;;
 		H ) HASH=$OPTARG;;
 		v ) VERSION=$OPTARG;;
+		K ) SIGN_KEYNAME=$OPTARG;;
+		G ) SIGN_ALGO=$OPTARG;;
+		R ) FW_AR_VER=$OPTARG;;
 		* ) echo "Invalid option passed to '$0' (options:$*)"
 		usage;;
 	esac
 done
+
+FW_AR_PROP=
+if [ "${FW_AR_VER+x}" ]; then
+	case "$FW_AR_VER" in
+		[0-9]|[1-5][0-9]|6[0-4]) ;;
+		*) echo "Invalid firmware anti-rollback version: $FW_AR_VER" >&2; exit 1;;
+	esac
+	[ -n "$SIGN_KEYNAME" ] && [ -n "$SIGN_ALGO" ] || {
+		echo "Anti-rollback metadata requires a signed FIT configuration" >&2
+		exit 1
+	}
+	FW_AR_PROP="fw_ar_ver = <${FW_AR_VER}>;"
+fi
 
 # Make sure user entered all required parameters
 if [ -z "${ARCH}" ] || [ -z "${COMPRESS}" ] || [ -z "${LOAD_ADDR}" ] || \
@@ -160,6 +179,21 @@ if [ -n "${ROOTFS}" ]; then
 	LOADABLES="${LOADABLES:+$LOADABLES, }\"rootfs${REFERENCE_CHAR}${ROOTFSNUM}\""
 fi
 
+# Bind all boot payloads, including the external root filesystem, to the config.
+SIGN_NODE=
+if [ -n "${SIGN_KEYNAME}" ] && [ -n "${SIGN_ALGO}" ]; then
+	SIGN_IMAGES='"kernel"'
+	[ -n "${FDT_NODE}" ] && SIGN_IMAGES="${SIGN_IMAGES}, \"fdt\""
+	[ -n "${INITRD_NODE}" ] && SIGN_IMAGES="${SIGN_IMAGES}, \"ramdisk\""
+	[ -n "${LOADABLES}" ] && SIGN_IMAGES="${SIGN_IMAGES}, \"loadables\""
+	SIGN_NODE="
+			signature${REFERENCE_CHAR}1 {
+				algo = \"${SIGN_ALGO}\";
+				key-name-hint = \"${SIGN_KEYNAME}\";
+				sign-images = ${SIGN_IMAGES};
+			};"
+fi
+
 # add DT overlay blobs
 FDTOVERLAY_NODE=""
 OVCONFIGS=""
@@ -230,11 +264,12 @@ ${ROOTFS_NODE}
 		default = \"${CONFIG}\";
 		${CONFIG} {
 			description = \"OpenWrt ${DEVICE}\";
+			${FW_AR_PROP}
 			kernel = \"kernel${REFERENCE_CHAR}1\";
 			${FDT_PROP}
 			${LOADABLES:+loadables = ${LOADABLES};}
 			${COMPATIBLE_PROP}
-			${INITRD_PROP}
+			${INITRD_PROP}${SIGN_NODE}
 		};
 		${OVCONFIGS}
 	};

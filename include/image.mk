@@ -532,6 +532,10 @@ define Device/Init
   DEVICE_FDT_NUM :=
   DEVICE_DTC_FLAGS :=
   DEVICE_DTCO_FLAGS :=
+  FIT_KEY_DIR :=
+  FIT_KEY_NAME :=
+  FIT_KEY_ALG :=
+  FIT_AR_VER :=
   SOC :=
 
   BOARD_NAME :=
