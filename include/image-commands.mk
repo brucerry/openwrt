@@ -454,13 +454,28 @@ define Build/fit-its
 		-A $(LINUX_KARCH) -v $(LINUX_VERSION) \
 		$(if $(FIT_KEY_NAME),-K $(FIT_KEY_NAME)) \
 		$(if $(FIT_AR_VER),-R $(FIT_AR_VER)) \
-		$(if $(FIT_KEY_ALG),-G $(FIT_KEY_ALG) -H $(firstword $(subst $(comma), ,$(FIT_KEY_ALG))))
+		$(if $(FIT_KEY_ALG),-G $(FIT_KEY_ALG) -H $(firstword $(subst $(comma), ,$(FIT_KEY_ALG)))) \
+		$(if $(FIT_ENCRYPT),-E $(FIT_CIPHER_ALG)) \
+		$(if $(and $(FIT_ROOTFS_AS_RAMDISK),$(findstring with-rootfs,$(word 3,$(1)))),-I)
+endef
+
+define Build/fit-encryption-keys
+	test -n "$(FIT_KEY_NAME)"; test -n "$(FIT_KEY_DIR)"; test -n "$(FIT_MKIMAGE)"; \
+	rm -rf $@.fit-keys; \
+	mkdir -m 0700 -p $@.fit-keys; \
+	ln -s "$(FIT_KEY_DIR)/$(FIT_KEY_NAME).key" "$(FIT_KEY_DIR)/$(FIT_KEY_NAME).crt" $@.fit-keys/; \
+	$(TOPDIR)/scripts/gen-mtk-fw-encryption-keys.sh \
+		--platform-key "$(FIT_PLATFORM_KEY)" --roe-salt "$(FIT_ROE_KEY_SALT)" \
+		--output-dir $@.fit-keys \
+		--key kernel_key:$(FIT_KERNEL_KEY_SALT) \
+		--key rootfs_key:$(FIT_ROOTFS_KEY_SALT)
 endef
 
 define Build/fit-image
 	$(if $(FIT_KEY_NAME),test -n "$(FIT_KEY_DIR)" && test -s "$(FIT_KEY_DIR)/$(FIT_KEY_NAME).key" && test -s "$(FIT_KEY_DIR)/$(FIT_KEY_NAME).crt")
-	$(call locked,PATH=$(LINUX_DIR)/scripts/dtc:$(PATH) mkimage $(if $(findstring external,$(word 3,$(1))),\
-		-E -B 0x1000 $(if $(findstring static,$(word 3,$(1))),-p 0x1000)) -f $@.its $(if $(FIT_KEY_DIR),-k $(FIT_KEY_DIR) -r) $@.new, \
+	$(if $(FIT_ENCRYPT),set -e; trap 'rm -rf $@.fit-keys' EXIT HUP INT TERM; $(call Build/fit-encryption-keys);) \
+	$(call locked,PATH=$(LINUX_DIR)/scripts/dtc:$(PATH) $(if $(FIT_MKIMAGE),$(FIT_MKIMAGE),mkimage) $(if $(findstring external,$(word 3,$(1))),\
+		-E -B 0x1000 $(if $(findstring static,$(word 3,$(1))),-p 0x1000)) -f $@.its $(if $(FIT_KEY_DIR),-k $(if $(FIT_ENCRYPT),$@.fit-keys,$(FIT_KEY_DIR)) -r) $@.new, \
 	  gen-cpio$(if $(TARGET_PER_DEVICE_ROOTFS),.$(ROOTFS_ID/$(DEVICE_NAME))))
 	@mv $@.new $@
 endef

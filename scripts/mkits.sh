@@ -40,6 +40,8 @@ usage() {
 	printf "\n\t-K ==> sign images, using key-name-hint 'name'"
 	printf "\n\t-G ==> signing algorithm to use with -K, e.g. sha256,rsa2048\n"
 	printf "\n\t-R ==> firmware anti-rollback version (0 through 64)\n"
+	printf "\n\t-E ==> encrypt kernel and rootfs payloads with the named cipher"
+	printf "\n\t-I ==> expose the RootFS blob as the FIT ramdisk\n"
 	exit 1
 }
 
@@ -52,7 +54,7 @@ LOADABLES=
 DTOVERLAY=
 DTADDR=
 
-while getopts ":A:a:c:C:D:d:e:f:i:k:l:n:o:O:v:r:s:H:K:G:R:" OPTION
+while getopts ":A:a:c:C:D:d:e:f:i:k:l:n:o:O:v:r:s:H:K:G:R:E:I" OPTION
 do
 	case $OPTION in
 		A ) ARCH=$OPTARG;;
@@ -76,10 +78,26 @@ do
 		K ) SIGN_KEYNAME=$OPTARG;;
 		G ) SIGN_ALGO=$OPTARG;;
 		R ) FW_AR_VER=$OPTARG;;
+		E ) CIPHER_ALGO=$OPTARG;;
+		I ) ROOTFS_AS_RAMDISK=1;;
 		* ) echo "Invalid option passed to '$0' (options:$*)"
 		usage;;
 	esac
 done
+
+if [ -n "$CIPHER_ALGO" ]; then
+	[ "$CIPHER_ALGO" = tee_aes256 ] && [ -n "$SIGN_KEYNAME" ] &&
+		[ -n "$SIGN_ALGO" ] || {
+		echo "Firmware encryption requires tee_aes256 and a signed configuration" >&2
+		exit 1
+	}
+fi
+[ -z "$ROOTFS_AS_RAMDISK" ] || {
+	[ -n "$ROOTFS" ] && [ -z "$INITRD" ] || {
+		echo "Rootfs ramdisk requires a rootfs and no separate initrd" >&2
+		exit 1
+	}
+}
 
 FW_AR_PROP=
 if [ "${FW_AR_VER+x}" ]; then
@@ -139,6 +157,12 @@ if [ -n "${DTB}" ]; then
 fi
 
 if [ -n "${INITRD}" ]; then
+	INITRD_CIPHER_NODE=
+	[ -z "$CIPHER_ALGO" ] || INITRD_CIPHER_NODE="
+			cipher {
+				algo = \"${CIPHER_ALGO}\";
+				key-name-hint = \"rootfs_key\";
+			};"
 	INITRD_NODE="
 		initrd${REFERENCE_CHAR}$INITRDNUM {
 			description = \"${ARCH_UPPER} OpenWrt ${DEVICE} initrd\";
@@ -147,6 +171,7 @@ if [ -n "${INITRD}" ]; then
 			type = \"ramdisk\";
 			arch = \"${ARCH}\";
 			os = \"linux\";
+			${INITRD_CIPHER_NODE}
 			hash${REFERENCE_CHAR}1 {
 				algo = \"crc32\";
 			};
@@ -160,14 +185,30 @@ fi
 
 
 if [ -n "${ROOTFS}" ]; then
+	ROOTFS_TYPE=filesystem
+	ROOTFS_OS=
+	ROOTFS_PROP=
+	if [ -n "$ROOTFS_AS_RAMDISK" ]; then
+		ROOTFS_TYPE=ramdisk
+		ROOTFS_OS='os = "linux";'
+		ROOTFS_PROP="ramdisk = \"rootfs${REFERENCE_CHAR}${ROOTFSNUM}\";"
+	fi
+	ROOTFS_CIPHER_NODE=
+	[ -z "$CIPHER_ALGO" ] || ROOTFS_CIPHER_NODE="
+			cipher {
+				algo = \"${CIPHER_ALGO}\";
+				key-name-hint = \"rootfs_key\";
+			};"
 	ROOTFS_NODE="
 		rootfs${REFERENCE_CHAR}$ROOTFSNUM {
 			description = \"${ARCH_UPPER} OpenWrt ${DEVICE} rootfs\";
 			${COMPATIBLE_PROP}
 			data = /incbin/(\"${ROOTFS}.pagesync\");
-			type = \"filesystem\";
+			type = \"${ROOTFS_TYPE}\";
 			arch = \"${ARCH}\";
+			${ROOTFS_OS}
 			compression = \"none\";
+			${ROOTFS_CIPHER_NODE}
 			hash${REFERENCE_CHAR}1 {
 				algo = \"crc32\";
 			};
@@ -176,8 +217,17 @@ if [ -n "${ROOTFS}" ]; then
 			};
 		};
 "
-	LOADABLES="${LOADABLES:+$LOADABLES, }\"rootfs${REFERENCE_CHAR}${ROOTFSNUM}\""
+	if [ -z "$ROOTFS_AS_RAMDISK" ]; then
+		LOADABLES="${LOADABLES:+$LOADABLES, }\"rootfs${REFERENCE_CHAR}${ROOTFSNUM}\""
+	fi
 fi
+
+KERNEL_CIPHER_NODE=
+[ -z "$CIPHER_ALGO" ] || KERNEL_CIPHER_NODE="
+			cipher {
+				algo = \"${CIPHER_ALGO}\";
+				key-name-hint = \"kernel_key\";
+			};"
 
 # Bind all boot payloads, including the external root filesystem, to the config.
 SIGN_NODE=
@@ -185,6 +235,7 @@ if [ -n "${SIGN_KEYNAME}" ] && [ -n "${SIGN_ALGO}" ]; then
 	SIGN_IMAGES='"kernel"'
 	[ -n "${FDT_NODE}" ] && SIGN_IMAGES="${SIGN_IMAGES}, \"fdt\""
 	[ -n "${INITRD_NODE}" ] && SIGN_IMAGES="${SIGN_IMAGES}, \"ramdisk\""
+	[ -n "${ROOTFS_PROP}" ] && SIGN_IMAGES="${SIGN_IMAGES}, \"ramdisk\""
 	[ -n "${LOADABLES}" ] && SIGN_IMAGES="${SIGN_IMAGES}, \"loadables\""
 	SIGN_NODE="
 			signature${REFERENCE_CHAR}1 {
@@ -247,6 +298,7 @@ DATA="/dts-v1/;
 			compression = \"${COMPRESS}\";
 			load = <${LOAD_ADDR}>;
 			entry = <${ENTRY_ADDR}>;
+			${KERNEL_CIPHER_NODE}
 			hash${REFERENCE_CHAR}1 {
 				algo = \"crc32\";
 			};
@@ -268,6 +320,7 @@ ${ROOTFS_NODE}
 			kernel = \"kernel${REFERENCE_CHAR}1\";
 			${FDT_PROP}
 			${LOADABLES:+loadables = ${LOADABLES};}
+			${ROOTFS_PROP}
 			${COMPATIBLE_PROP}
 			${INITRD_PROP}${SIGN_NODE}
 		};
