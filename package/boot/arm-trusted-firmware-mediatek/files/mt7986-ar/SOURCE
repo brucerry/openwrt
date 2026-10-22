@@ -1,0 +1,9 @@
+MediaTek MT7986 eFuse release libraries from the vendor-supplied ATF tree:
+  atf/plat/mediatek/mt7986/drivers/efuse/release/
+Used only by EWS276-FIT signed anti-rollback builds; unsigned builds retain
+the pinned ATF release objects. These archives implement the separate firmware
+counter fields 34/35 and the eFuse write-permission API used by the backport.
+
+SHA256:
+9e73b8acbb472cea943786532f01a5960e41e811fa8a4bbb3740454ff2ee360e  efuse_cmd.a
+e8f4253b668dc3b0b207f3dd58020895d357da879301f8c2ea9fc5e2a0c92153  plat_efuse.a

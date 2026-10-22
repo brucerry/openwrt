@@ -22,6 +22,33 @@ PKG_MAINTAINER:=Daniel Golle <daniel@makrotopia.org>
 include $(INCLUDE_DIR)/kernel.mk
 include $(INCLUDE_DIR)/trusted-firmware-a.mk
 include $(INCLUDE_DIR)/package.mk
+include $(CURDIR)/secure-boot.mk
+
+define Download/mbedtls-tfa
+  FILE:=$(MBEDTLS_TFA_SOURCE)
+  PROTO:=git
+  URL:=https://github.com/Mbed-TLS/mbedtls.git
+  SOURCE_VERSION:=da6a8c7b9b8e0c1e236deef2910642657db1a7ec
+  MIRROR_HASH:=a252825a202e11250846cfde926e116efa987e9189b8a6752a644c934abf8267
+  SUBDIR:=mbedtls-tfa-$(MBEDTLS_TFA_RELEASE)
+endef
+$(eval $(call Download,mbedtls-tfa))
+
+MTK_TBB_BUILD_DIR=$(PKG_BUILD_DIR)
+PKG_FILE_DEPENDS += $(if $(filter mt7986-ews276-fit-spim-nand-ddr4-signed,$(BUILD_VARIANT)),$(MTK_TBB_KEY_DIR) $(INCLUDE_DIR)/mtk-anti-rollback.mk)
+
+define Build/Prepare
+	$(call Build/Prepare/Default)
+	$(if $(TFA_TBB),$(TAR) -C $(PKG_BUILD_DIR) -xf $(DL_DIR)/$(MBEDTLS_TFA_SOURCE))
+	$(if $(TFA_TBB),sed 's/@BL_AR_VER@/$(MTK_BL_AR_VER)/g' \
+		$(CURDIR)/files/ews276-fit-bl-ar-table.xml.in > $(PKG_BUILD_DIR)/ews276-fit-bl-ar-table.xml)
+	$(if $(TFA_TBB),$(CP) $(CURDIR)/files/mt7986-ar/*.a $(PKG_BUILD_DIR)/plat/mediatek/mt7986/drivers/efuse/release/)
+endef
+
+define Build/Compile
+	$(if $(TFA_TBB),$(MTK_TBB_CHECK_KEYS))
+	$(call Build/Compile/Trusted-Firmware-A)
+endef
 
 define Trusted-Firmware-A/Default
   BUILD_TARGET:=mediatek
@@ -42,6 +69,7 @@ define Trusted-Firmware-A/Default
   FIP_OFFSET:=
   FIP_SIZE:=
   SPIM_CTRL:=
+  TFA_TBB:=
 endef
 
 define Trusted-Firmware-A/mt7622-nor-1ddr
@@ -689,6 +717,13 @@ define Trusted-Firmware-A/mt7988-spim-nand-ubi-ddr4
   USE_UBI:=1
 endef
 
+define Trusted-Firmware-A/mt7986-ews276-fit-spim-nand-ddr4-signed
+  $(call Trusted-Firmware-A/mt7986-ews276-fit-spim-nand-ddr4)
+  NAME:=Emplus EWS276-FIT (SPI-NAND, DDR4, secure boot)
+  BUILD_DEVICES:=emplus_ews276-fit-signed
+  TFA_TBB:=1
+endef
+
 TFA_TARGETS:= \
 	mt7622-nor-1ddr \
 	mt7622-nor-2ddr \
@@ -734,6 +769,7 @@ TFA_TARGETS:= \
 	mt7986-snand-ddr4 \
 	mt7986-spim-nand-ddr4 \
 	mt7986-ews276-fit-spim-nand-ddr4 \
+	mt7986-ews276-fit-spim-nand-ddr4-signed \
 	mt7986-spim-nand-ubi-ddr4 \
 	mt7986-spim-nand-4k-ddr4 \
 	mt7987-emmc-comb \
@@ -768,7 +804,7 @@ TFA_TARGETS:= \
 
 TFA_MAKE_FLAGS += \
 	BOOT_DEVICE=$(BOOT_DEVICE) \
-	USE_MKIMAGE=1 MKIMAGE=$(STAGING_DIR_HOST)/bin/mkimage \
+	$(if $(TFA_TBB),$(MTK_TBB_FLAGS),USE_MKIMAGE=1 MKIMAGE=$(STAGING_DIR_HOST)/bin/mkimage) \
 	$(if $(findstring ddr4,$(DDR_TYPE)),DRAM_USE_DDR4=1) \
 	$(if $(BOARD_QFN),BOARD_QFN=1,BOARD_BGA=1) \
 	$(if $(NAND_TYPE),NAND_TYPE=$(NAND_TYPE)) \
@@ -806,6 +842,11 @@ define Package/trusted-firmware-a/install
 	$(INSTALL_DIR) $(STAGING_DIR_IMAGE)
 	$(INSTALL_DATA) $(PKG_BUILD_DIR)/build/$(PLAT)/release/bl2.img $(STAGING_DIR_IMAGE)/$(BUILD_VARIANT)-bl2.img
 	$(INSTALL_DATA) $(PKG_BUILD_DIR)/build/$(PLAT)/release/bl31.bin $(STAGING_DIR_IMAGE)/$(BUILD_VARIANT)-bl31.bin
+endef
+
+define Package/trusted-firmware-a-mt7986-ews276-fit-spim-nand-ddr4-signed/install
+	$(call Package/trusted-firmware-a/install)
+	$(INSTALL_DATA) $(PKG_BUILD_DIR)/build/$(PLAT)/release/bl2.img.signkeyhash $(STAGING_DIR_IMAGE)/$(BUILD_VARIANT)-bl2.img.signkeyhash
 endef
 
 $(eval $(call BuildPackage/Trusted-Firmware-A))

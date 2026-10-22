@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bl_ar_table>
+  <bl_ar_entry>
+    <BL_AR_VER>@BL_AR_VER@</BL_AR_VER>
+    <USED>1</USED>
+    <DATE>2026/10/22</DATE>
+    <NOTE>EWS276-FIT signed bootloader baseline</NOTE>
+  </bl_ar_entry>
+</bl_ar_table>

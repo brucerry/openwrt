@@ -1,0 +1,645 @@
+diff -ruN a/bl2/bl2_image_load_v2.c b/bl2/bl2_image_load_v2.c
+--- a/bl2/bl2_image_load_v2.c	2026-10-22 13:19:21.675644721 +0800
++++ b/bl2/bl2_image_load_v2.c	2026-10-22 13:19:21.726413681 +0800
+@@ -137,12 +137,14 @@
+ 	/* Flush the parameters to be passed to next image */
+ 	plat_flush_next_bl_params();
+ 
+-	/* Update boot loader anti-rollback version */
++#if !defined(MTK_AR_V2) || BL2_UPDATE_AR_VER
++	/* Only provisioning policy may authorize automatic counter writes. */
+ 	err = mtk_ar_update_bl_ar_ver();
+ 	if (err != 0) {
+ 		ERROR("BL2: Failure in updating anti-rollback version (%i)\n", err);
+ 		plat_error_handler(err);
+ 	}
++#endif
+ 
+ 	return bl2_to_next_bl_params->head->ep_info;
+ }
+diff -ruN a/plat/mediatek/apsoc_common/bl2/ar.mk b/plat/mediatek/apsoc_common/bl2/ar.mk
+--- a/plat/mediatek/apsoc_common/bl2/ar.mk	2026-10-22 13:07:57.000000000 +0800
++++ b/plat/mediatek/apsoc_common/bl2/ar.mk	2026-10-22 13:19:21.726413681 +0800
+@@ -21,4 +21,11 @@
+ 
+ CPPFLAGS		+=	-DMTK_ANTI_ROLLBACK
+ 
++ifeq ($(PLAT),mt7986)
++BL2_UPDATE_AR_VER	?=	0
++# MT7986 has dual BL counters and a separate 64-bit firmware counter.
++CPPFLAGS		+=	-DMTK_AR_V2 -DBL_AR_VER_DUAL -DFW_AR_VER_SUPPORT \
++				-DBL2_UPDATE_AR_VER=$(BL2_UPDATE_AR_VER)
++endif
++
+ endif
+diff -ruN a/plat/mediatek/apsoc_common/bl2/ar_post.mk b/plat/mediatek/apsoc_common/bl2/ar_post.mk
+--- a/plat/mediatek/apsoc_common/bl2/ar_post.mk	2026-10-22 13:07:57.000000000 +0800
++++ b/plat/mediatek/apsoc_common/bl2/ar_post.mk	2026-10-22 13:13:08.633404771 +0800
+@@ -13,6 +13,9 @@
+ ifeq ($(ANTI_ROLLBACK),1)
+ 
+ AUTO_AR_CONF		:=	$(MTK_PLAT_SOC)/auto_ar_conf.mk
++AR_DEPS			:=	ar_tool
++CRT_DEPS		+=	$(AR_DEPS)
++$(BUILD_PLAT)/bl2.img: $(AR_DEPS)
+ 
+ ar_tool: $(DOVERSIONTOOL) $(AUTO_AR_VER) $(AUTO_AR_CONF)
+ 	$(eval $(shell sed -n 1p $(AUTO_AR_CONF)))
+diff -ruN a/plat/mediatek/apsoc_common/bl2/mtk_tbbr.c b/plat/mediatek/apsoc_common/bl2/mtk_tbbr.c
+--- a/plat/mediatek/apsoc_common/bl2/mtk_tbbr.c	2026-10-22 13:07:57.000000000 +0800
++++ b/plat/mediatek/apsoc_common/bl2/mtk_tbbr.c	2026-10-22 13:09:22.099983786 +0800
+@@ -11,7 +11,7 @@
+ #if defined(ANTI_ROLLBACK)
+ #include <ar_table.h>
+ #elif defined(MTK_ANTI_ROLLBACK)
+-extern int mtk_ar_get_efuse_bl_ar_ver(uint32_t *efuse_bl_ar_ver);
++#include <mtk_ar.h>
+ #endif
+ 
+ #ifdef MTK_FIP_ENC
+@@ -48,7 +48,7 @@
+ 	int ret;
+ 	uint32_t efuse_bl_ar_ver;
+ 
+-	ret = mtk_ar_get_efuse_bl_ar_ver(&efuse_bl_ar_ver);
++	ret = mtk_ar_get_bl_ar_ver(&efuse_bl_ar_ver);
+ 	if (ret) {
+ 		ERROR("[%s] get EFUSE_BL_AR_VER fail\n", __func__);
+ 		return ret;
+diff -ruN a/plat/mediatek/apsoc_common/bl31/apsoc_sip_svc_common.c b/plat/mediatek/apsoc_common/bl31/apsoc_sip_svc_common.c
+--- a/plat/mediatek/apsoc_common/bl31/apsoc_sip_svc_common.c	2026-10-22 13:07:57.000000000 +0800
++++ b/plat/mediatek/apsoc_common/bl31/apsoc_sip_svc_common.c	2026-10-22 13:09:22.099983786 +0800
+@@ -16,6 +16,9 @@
+ #include "memdump.h"
+ #include <mtk_wdt.h>
+ #include <platform_def.h>
++#ifdef MTK_ANTI_ROLLBACK
++#include <mtk_ar.h>
++#endif
+ 
+ #ifdef MTK_FW_ENC
+ #include <fw_dec.h>
+@@ -254,7 +257,45 @@
+ }
+ #endif
+ 
++#ifdef MTK_ANTI_ROLLBACK
++static uintptr_t apsoc_sip_get_ar_ver(uint32_t smc_fid, u_register_t x1,
++				    u_register_t x2, u_register_t x3,
++				    u_register_t x4, void *cookie,
++				    void *handle, u_register_t flags)
++{
++	uint32_t ar_ver = 0;
++	int ret = mtk_ar_get_ar_ver((uint32_t)x1, &ar_ver);
++
++	SMC_RET2(handle, ret, ar_ver);
++}
++
++static uintptr_t apsoc_sip_update_ar_ver(uint32_t smc_fid, u_register_t x1,
++				       u_register_t x2, u_register_t x3,
++				       u_register_t x4, void *cookie,
++				       void *handle, u_register_t flags)
++{
++	int ret = mtk_ar_update_ar_ver((uint32_t)x1, (uint32_t)x2);
++
++	SMC_RET1(handle, ret);
++}
++
++static uintptr_t apsoc_sip_lock_ar_ver(uint32_t smc_fid, u_register_t x1,
++				     u_register_t x2, u_register_t x3,
++				     u_register_t x4, void *cookie,
++				     void *handle, u_register_t flags)
++{
++	int ret = mtk_ar_lock_ar_ver();
++
++	SMC_RET1(handle, ret);
++}
++#endif
++
+ struct mtk_sip_call_record apsoc_common_sip_calls[] = {
++#ifdef MTK_ANTI_ROLLBACK
++	MTK_SIP_CALL_RECORD(MTK_SIP_GET_AR_VER, apsoc_sip_get_ar_ver),
++	MTK_SIP_CALL_RECORD(MTK_SIP_UPDATE_AR_VER, apsoc_sip_update_ar_ver),
++	MTK_SIP_CALL_RECORD(MTK_SIP_LOCK_AR_VER, apsoc_sip_lock_ar_ver),
++#endif
+ #ifdef MTK_SIP_KERNEL_BOOT_ENABLE
+ 	MTK_SIP_CALL_RECORD(MTK_SIP_KERNEL_BOOT_AARCH32, apsoc_sip_boot_to_kernel),
+ #endif
+diff -ruN a/plat/mediatek/apsoc_common/bl31/apsoc_sip_svc_common.h b/plat/mediatek/apsoc_common/bl31/apsoc_sip_svc_common.h
+--- a/plat/mediatek/apsoc_common/bl31/apsoc_sip_svc_common.h	2026-10-22 13:07:57.000000000 +0800
++++ b/plat/mediatek/apsoc_common/bl31/apsoc_sip_svc_common.h	2026-10-22 13:09:22.099983786 +0800
+@@ -215,6 +215,10 @@
+  */
+ #define MTK_SIP_GET_KEY				0xC2000583
+ 
++#define MTK_SIP_GET_AR_VER			0xC2000590
++#define MTK_SIP_UPDATE_AR_VER			0xC2000591
++#define MTK_SIP_LOCK_AR_VER			0xC2000592
++
+ /* ApSoC common SiP function call records */
+ extern struct mtk_sip_call_record apsoc_common_sip_calls[];
+ extern struct mtk_sip_call_record apsoc_common_sip_calls_from_sec[];
+diff -ruN a/plat/mediatek/apsoc_common/drivers/efuse/mtk_efuse.c b/plat/mediatek/apsoc_common/drivers/efuse/mtk_efuse.c
+--- a/plat/mediatek/apsoc_common/drivers/efuse/mtk_efuse.c	2026-10-22 13:07:57.000000000 +0800
++++ b/plat/mediatek/apsoc_common/drivers/efuse/mtk_efuse.c	2026-10-22 13:09:22.099983786 +0800
+@@ -119,6 +119,12 @@
+ 	if (ret != MTK_EFUSE_SUCCESS)
+ 		return ret;
+ 
++#ifdef MTK_AR_V2
++	ret = efuse_is_writable(efuse_field);
++	if (ret != MTK_EFUSE_SUCCESS)
++		return ret;
++#endif
++
+ 	if (addr < DRAM_BASE || addr >= DRAM_BASE + DRAM_MAX_SIZE ||
+ 	    (addr & PAGE_SIZE_MASK))
+ 		return MTK_EFUSE_ERROR_INVALIDE_PARAMTER;
+diff -ruN a/plat/mediatek/apsoc_common/mtk_ar.c b/plat/mediatek/apsoc_common/mtk_ar.c
+--- a/plat/mediatek/apsoc_common/mtk_ar.c	2026-10-22 13:07:57.000000000 +0800
++++ b/plat/mediatek/apsoc_common/mtk_ar.c	2026-10-22 13:14:57.511055280 +0800
+@@ -1,221 +1,263 @@
+ // SPDX-License-Identifier: BSD-3-Clause
+ /*
+- * Copyright (c) 2018, ARM Limited and Contributors. All rights reserved.
++ * Copyright (c) 2025, MediaTek Inc. All rights reserved.
+  */
+ 
+ #include <common/debug.h>
+-#include <plat/common/platform.h>
++#include <errno.h>
++#include <lib/spinlock.h>
+ 
+ #include <mtk_efuse.h>
++#include "mtk_ar.h"
+ 
+ #define MTK_AR_MAX_VER			64
+-#define MTK_AR_NUM_BL_AR_VER		4
++#define MTK_AR_NUM_AR_VER		2
++
++#define AR_VER(mask) \
++	((mask) == 0 ? 0 : (64 - __builtin_clzll((mask))))
++#define AR_VER_MASK(ver) \
++	((ver) == 0 ? 0 : GENMASK((ver) - 1, 0))
+ 
+ extern const uint32_t bl_ar_ver;
+ 
+-static uint32_t mtk_ar_get_far_left_set_bit_pos(uint64_t num)
++static bool write_lock;
++static spinlock_t ar_lock;
++
++static int get_efuse_ar_ver(uint32_t field, uint32_t *ar_ver)
+ {
++	uint32_t buf[MTK_AR_NUM_AR_VER] = { 0 };
++	uint64_t val;
++	uint32_t ret;
+ 	uint32_t i;
+-	uint32_t pos = 0;
+ 
+-	for (i = 1; i <= MTK_AR_MAX_VER && num != 0; i++, num >>= 1) {
+-		if (num & 0x1)
+-			pos = i;
++	*ar_ver = 0;
++
++	for (i = 0; i < MTK_AR_NUM_AR_VER; i++) {
++		ret = mtk_efuse_read(field + i, (uint8_t *)&buf[i],
++				     sizeof(uint32_t));
++		if (ret) {
++			ERROR("Anti-Rollback: Failed to read version: %d\n", ret);
++			return -EFAULT;
++		}
+ 	}
++	val = ((uint64_t)buf[1] << 32) | buf[0];
+ 
+-	return pos;
++	*ar_ver = AR_VER(val);
++
++	return 0;
+ }
+ 
+-static int mtk_ar_set_set_bits(uint64_t *num, uint32_t count)
++static int set_efuse_ar_ver(uint32_t field, uint32_t ar_ver)
+ {
+-	*num = 0;
++	uint32_t buf[MTK_AR_NUM_AR_VER] = { 0 };
++	uint64_t val = AR_VER_MASK(ar_ver);
++	uint32_t efuse_ar_ver = 0;
++	uint32_t exp_val;
++	uint32_t ret;
++	uint32_t i;
+ 
+-	if (count > MTK_AR_MAX_VER)
+-	{
+-		ERROR("[%s] count > %d\n",
+-		      __func__, MTK_AR_MAX_VER);
+-		goto error;
+-	}
++	ret = get_efuse_ar_ver(field, &efuse_ar_ver);
++	if (ret)
++		return ret;
++
++	if (ar_ver <= efuse_ar_ver)
++		return 0;
++
++	for (i = 0; i < MTK_AR_NUM_AR_VER; i++) {
++		exp_val = (uint32_t)(val >> (32 * i));
++
++		ret = mtk_efuse_read(field + i, (uint8_t *)&buf[i],
++				     sizeof(uint32_t));
++		if (ret) {
++			ERROR("Anti-Rollback: Failed to read version: %d\n", ret);
++			return -EFAULT;
++		}
+ 
+-	while (count) {
+-		*num <<= 1;
+-		*num |= 0x1;
+-		count--;
++		if (buf[i] != exp_val) {
++			buf[i] = exp_val;
++
++			ret = mtk_efuse_write(field + i, (uint8_t *)&buf[i],
++					      sizeof(uint32_t));
++			if (ret) {
++				ERROR("Anti-Rollback: Failed to write version: %d\n", ret);
++				return -EFAULT;
++			}
++		}
+ 	}
+ 
+ 	return 0;
+-
+-error:
+-	return -1;
+ }
+ 
+-int mtk_ar_get_efuse_bl_ar_ver(uint32_t *efuse_bl_ar_ver)
++static int get_efuse_bl_ar_ver(uint32_t *ar_ver)
+ {
++	uint32_t ar_ver0 = 0;
++	uint32_t ar_ver1 = 0;
+ 	int ret;
+-	uint32_t i;
+-	uint32_t *buffer;
+-	uint64_t read_buffer[2] = { 0 };
+ 
+-	for (i = 0, buffer = (uint32_t *)read_buffer;
+-	     i < MTK_AR_NUM_BL_AR_VER;
+-	     i++, buffer++) {
+-		ret = mtk_efuse_read(EFUSE_BL_AR_VER0 + i,
+-				     (uint8_t *)buffer,
+-				     sizeof(*buffer));
+-		if (ret) {
+-			ERROR("[%s] read BL anti-rollback version fail (%d)\n",
+-			      __func__, ret);
+-			goto error;
+-		}
++	*ar_ver = 0;
++
++	ret = get_efuse_ar_ver(EFUSE_BL_AR_VER0, &ar_ver0);
++	if (ret) {
++		ERROR("Anti-Rollback: Failed to get version: %d\n", ret);
++		return ret;
+ 	}
+ 
+-	read_buffer[0] = read_buffer[0] | read_buffer[1];
++#ifdef BL_AR_VER_DUAL
++	ret = get_efuse_ar_ver(EFUSE_BL_AR_VER2, &ar_ver1);
++	if (ret) {
++		ERROR("Anti-Rollback: Failed to get version: %d\n", ret);
++		return ret;
++	}
++#endif
+ 
+-	VERBOSE("[%s] read_buffer[0] = 0x%lx, read_buffer[1] = 0x%lx\n",
+-		__func__, read_buffer[0], read_buffer[1]);
++	*ar_ver = MAX(ar_ver0, ar_ver1);
+ 
+-	/*
+-	 * Each bit in read_buffer[0] represent an anti-rollback version,
+-	 * so we only need to get the far left set bit position.
+-	 *
+-	 * bit0  set as high represent the efuse anti-rollback version is 1
+-	 * bit1  set as high represent the efuse anti-rollback version is 2
+-	 * ...
+-	 * bit63 set as high represent the efuse anti-rollback version is 64
+-	 */
+-	*efuse_bl_ar_ver = mtk_ar_get_far_left_set_bit_pos(read_buffer[0]);
++	return ret;
++}
+ 
+-	VERBOSE("[%s] efuse_bl_ar_ver = %u\n", __func__, *efuse_bl_ar_ver);
++static int get_efuse_fw_ar_ver(uint32_t *ar_ver)
++{
++#ifdef FW_AR_VER_SUPPORT
++	return get_efuse_ar_ver(EFUSE_FW_AR_VER0, ar_ver);
++#else
++	return -ENODEV;
++#endif
++}
+ 
+-	return 0;
++int mtk_ar_get_bl_ar_ver(uint32_t *ar_ver)
++{
++	if (!ar_ver)
++		return -EINVAL;
+ 
+-error:
+-	return -1;
++	return get_efuse_bl_ar_ver(ar_ver);
+ }
+ 
+-static int mtk_ar_set_efuse_bl_ar_ver()
++int mtk_ar_get_ar_ver(uint32_t id, uint32_t *ar_ver)
+ {
+-	int ret;
+-	uint32_t i;
+-	uint32_t *buffer;
+-	uint32_t read_buffer = 0;
+-	uint64_t write_buffer[2] = { 0 };
+-
+-	VERBOSE("[%s] bl_ar_ver = %u\n", __func__, bl_ar_ver);
+-
+-	if (bl_ar_ver > MTK_AR_MAX_VER) {
+-		ERROR("[%s] Anti-rollback version exceed %d \n",
+-		      __func__, MTK_AR_MAX_VER);
+-		goto error;
+-	}
+-
+-	/*
+-	 * Each bit in write_buffer[0] represent an anti-rollback version,
+-	 * so we need to set these relative bit as high.
+-	 *
+-	 * if efuse anti-rollback version is 1, set bit0 as high
+-	 * if efuse anti-rollback version is 2, set bit0 to bit1 as high
+-	 * ...
+-	 * if efuse anti-rollback version is 64, set bit0 to bit63 as high
+-	 */
+-	ret = mtk_ar_set_set_bits(write_buffer, bl_ar_ver);
+-	if (ret)
+-		goto error;
++	if (!ar_ver)
++		return -EINVAL;
+ 
+-	write_buffer[1] = write_buffer[0];
++	if (id == BL_AR_VER_ID)
++		return get_efuse_bl_ar_ver(ar_ver);
++	else if (id == FW_AR_VER_ID)
++		return get_efuse_fw_ar_ver(ar_ver);
++	else
++		return -EINVAL;
+ 
+-	VERBOSE("[%s] write_buffer[0] = 0x%lx, write_buffer[1] = 0x%lx\n",
+-		__func__, write_buffer[0], write_buffer[1]);
++	return 0;
++}
+ 
+-	for (i = 0, buffer = (uint32_t *)write_buffer;
+-	     i < MTK_AR_NUM_BL_AR_VER;
+-	     i++, buffer++) {
+-		/* no need to write if write data same with fuse data */
+-		ret = mtk_efuse_read(EFUSE_BL_AR_VER0 + i,
+-				     (uint8_t *)&read_buffer,
+-				     sizeof(read_buffer));
+-		if (ret) {
+-			ERROR("[%s] read BL anti-rollback version fail (%d)\n",
+-			      __func__, ret);
+-			goto error;
+-		}
+-		if (*buffer == read_buffer)
+-			continue;
++static int get_efuse_ar_en(uint32_t *ar_en)
++{
++	uint32_t ret;
+ 
+-		ret = mtk_efuse_write(EFUSE_BL_AR_VER0 + i,
+-				      (uint8_t *)buffer,
+-				      sizeof(*buffer));
+-		if (ret) {
+-			ERROR("[%s] write BL anti-rollback version fail (%d)\n",
+-			      __func__, ret);
+-			goto error;
+-		}
++	ret = mtk_efuse_read(EFUSE_AR_EN, (uint8_t *)ar_en, sizeof(*ar_en));
++	if (ret) {
++		ERROR("Anti-Rollback: Failed to read status: %d\n", ret);
++		return -EFAULT;
+ 	}
++
+ 	return 0;
++}
++
++int mtk_ar_check_consis(uint32_t ar_ver)
++{
++	/* make sure the version is equal to current running BL's version */
++	if (ar_ver != bl_ar_ver) {
++		ERROR("Anti-Rollback: BL Version is not consistent\n");
++		return -EINVAL;
++	}
+ 
+-error:
+-	return -1;
++	return 0;
+ }
+ 
+-static int mtk_ar_get_efuse_ar_en(uint32_t *efuse_ar_en)
++static int update_efuse_bl_ar_ver(void)
+ {
+ 	int ret;
+ 
+-	ret = mtk_efuse_read(EFUSE_AR_EN,
+-			     (uint8_t *)efuse_ar_en,
+-			     sizeof(*efuse_ar_en));
++	/* No need to carry the BL version from normal world,
++	   since BL31 already knows the version. */
++
++	ret = set_efuse_ar_ver(EFUSE_BL_AR_VER0, bl_ar_ver);
+ 	if (ret) {
+-		ERROR("[%s] read anti-rollback status fail\n (%d)",
+-		      __func__, ret);
+-		goto error;
++		ERROR("Anti-Rollback: Failed to update version: %d\n", ret);
++		return ret;
+ 	}
+ 
+-	return 0;
++#ifdef BL_AR_VER_DUAL
++	ret = set_efuse_ar_ver(EFUSE_BL_AR_VER2, bl_ar_ver);
++	if (ret)
++		ERROR("Anti-Rollback: Failed to update version: %d\n", ret);
++#endif
+ 
+-error:
+-	return -1;
++	return ret;
++}
++
++static int update_efuse_fw_ar_ver(uint32_t ar_ver)
++{
++#ifdef FW_AR_VER_SUPPORT
++	return set_efuse_ar_ver(EFUSE_FW_AR_VER0, ar_ver);
++#else
++	return -ENODEV;
++#endif
+ }
+ 
+ int mtk_ar_update_bl_ar_ver(void)
+ {
++	uint32_t ar_en = 0;
+ 	int ret;
+-	uint32_t efuse_ar_en;
+-	uint32_t efuse_bl_ar_ver;
+ 
+-	ret = mtk_ar_get_efuse_ar_en(&efuse_ar_en);
++	ret = get_efuse_ar_en(&ar_en);
+ 	if (ret)
+-		goto error;
++		return ret;
+ 
+-	ret = mtk_ar_get_efuse_bl_ar_ver(&efuse_bl_ar_ver);
+-	if (ret)
+-		goto error;
++	if (ar_en) {
++		ret = update_efuse_bl_ar_ver();
++		NOTICE("Updating BL Anti-Rollback Version ... bl_ar_ver:%u %s\n",
++		       bl_ar_ver, (!ret) ? "OK" : "FAIL");
++	}
++
++	return ret;
++}
++
++int mtk_ar_update_ar_ver(uint32_t id, uint32_t ar_ver)
++{
++	uint32_t ar_en = 0;
++	int ret;
+ 
+-	VERBOSE("[%s] bl_ar_ver = %u, efuse_bl_ar_ver = %u, efuse_ar_en = %u\n",
+-		__func__, bl_ar_ver, efuse_bl_ar_ver, efuse_ar_en);
++	if (ar_ver > MTK_AR_MAX_VER) {
++		ERROR("Anti-Rollback: Invalid version: %u\n", ar_ver);
++		return -EINVAL;
++	}
++	if (id != BL_AR_VER_ID && id != FW_AR_VER_ID)
++		return -EINVAL;
+ 
+-	if (bl_ar_ver > efuse_bl_ar_ver && efuse_ar_en == 1) {
+-		ret = mtk_ar_set_efuse_bl_ar_ver();
+-		NOTICE("Updating BL Anti-Rollback Version ... %u -> %u %s\n",
+-		       efuse_bl_ar_ver, bl_ar_ver, ret == 0 ? "OK" : "FAIL");
+-		if (ret)
+-			goto error;
++	spin_lock(&ar_lock);
++	if (write_lock) {
++		spin_unlock(&ar_lock);
++		return -EPERM;
+ 	}
++	ret = get_efuse_ar_en(&ar_en);
++	if (ret)
++		goto out;
+ 
+-	return 0;
++	if (ar_en) {
++		if (id == BL_AR_VER_ID)
++			ret = update_efuse_bl_ar_ver();
++		else
++			ret = update_efuse_fw_ar_ver(ar_ver);
++	}
+ 
+-error:
+-	return -1;
++out:
++	spin_unlock(&ar_lock);
++	return ret;
+ }
+ 
+-int mtk_ar_check_consis(uint32_t nv_ctr)
++int mtk_ar_lock_ar_ver(void)
+ {
+-	VERBOSE("[%s] bl_ar_ver = %u, nv_ctr = %u\n",
+-		__func__, bl_ar_ver, nv_ctr);
+-
+-	if (nv_ctr != bl_ar_ver) {
+-		ERROR("BL Anti-Rollback Version not consistent\n");
+-		return -1;
+-	}
++	spin_lock(&ar_lock);
++	write_lock = 1;
++	spin_unlock(&ar_lock);
+ 
+ 	return 0;
+ }
+diff -ruN a/plat/mediatek/apsoc_common/mtk_ar.h b/plat/mediatek/apsoc_common/mtk_ar.h
+--- a/plat/mediatek/apsoc_common/mtk_ar.h	1970-01-01 08:00:00.000000000 +0800
++++ b/plat/mediatek/apsoc_common/mtk_ar.h	2026-10-22 13:08:11.047175027 +0800
+@@ -0,0 +1,24 @@
++/* SPDX-License-Identifier: BSD-3-Clause */
++/*
++ * Copyright (c) 2025, MediaTek Inc. All rights reserved.
++ */
++
++#ifndef _MTK_AR_H_
++#define _MTK_AR_H_
++
++enum AR_VER_ID {
++	BL_AR_VER_ID = 0,
++	FW_AR_VER_ID,
++};
++
++int mtk_ar_get_bl_ar_ver(uint32_t *ar_ver);
++
++int mtk_ar_get_ar_ver(uint32_t id, uint32_t *ar_ver);
++
++int mtk_ar_update_bl_ar_ver(void);
++
++int mtk_ar_update_ar_ver(uint32_t id, uint32_t ar_ver);
++
++int mtk_ar_lock_ar_ver(void);
++
++#endif /* _MTK_AR_H_ */
+diff -ruN a/plat/mediatek/mt7986/bl31/bl31_plat_setup.c b/plat/mediatek/mt7986/bl31/bl31_plat_setup.c
+--- a/plat/mediatek/mt7986/bl31/bl31_plat_setup.c	2026-10-22 13:07:57.000000000 +0800
++++ b/plat/mediatek/mt7986/bl31/bl31_plat_setup.c	2026-10-22 13:09:22.099983786 +0800
+@@ -77,7 +77,7 @@
+ #if TRUSTED_BOARD_BOOT
+ 	plat_efuse_sbc_init();
+ #endif
+-#if MTK_ANTI_ROLLBACK
++#if MTK_ANTI_ROLLBACK && !defined(MTK_AR_V2)
+ 	plat_efuse_ar_init();
+ #endif
+ }
+diff -ruN a/plat/mediatek/mt7986/drivers/efuse/efuse.mk b/plat/mediatek/mt7986/drivers/efuse/efuse.mk
+--- a/plat/mediatek/mt7986/drivers/efuse/efuse.mk	2026-10-22 13:07:57.000000000 +0800
++++ b/plat/mediatek/mt7986/drivers/efuse/efuse.mk	2026-10-22 13:09:22.099983786 +0800
+@@ -12,5 +12,10 @@
+ 
+ PLAT_INCLUDES		+=	-I$(MTK_PLAT_SOC)/drivers/efuse
+ 
++ifeq ($(ANTI_ROLLBACK),1)
++LDLIBS			+=	$(MTK_PLAT_SOC)/drivers/efuse/release/plat_efuse.a	\
++				$(MTK_PLAT_SOC)/drivers/efuse/release/efuse_cmd.a
++else
+ PREBUILT_LIBS		+=	$(MTK_PLAT_SOC)/drivers/efuse/release/plat_efuse.o	\
+ 				$(MTK_PLAT_SOC)/drivers/efuse/release/efuse_cmd.o
++endif
+diff -ruN a/plat/mediatek/mt7986/drivers/efuse/plat_efuse.h b/plat/mediatek/mt7986/drivers/efuse/plat_efuse.h
+--- a/plat/mediatek/mt7986/drivers/efuse/plat_efuse.h	2026-10-22 13:07:57.000000000 +0800
++++ b/plat/mediatek/mt7986/drivers/efuse/plat_efuse.h	2026-10-22 13:09:22.099983786 +0800
+@@ -14,7 +14,9 @@
+ 	EFUSE_BL_AR_VER0,
+ 	EFUSE_BL_AR_VER1,
+ 	EFUSE_BL_AR_VER2,
+-	EFUSE_BL_AR_VER3
++	EFUSE_BL_AR_VER3,
++	EFUSE_FW_AR_VER0 = 34,
++	EFUSE_FW_AR_VER1
+ };
+ 
+ int plat_efuse_sbc_init(void);
+@@ -22,5 +24,6 @@
+ uint32_t efuse_get_len(uint32_t field, uint32_t *len);
+ uint32_t efuse_validate_field(uint32_t field, u_register_t flags);
+ uint32_t efuse_disable(uint32_t field);
++uint32_t efuse_is_writable(uint32_t field);
+ 
+ #endif /* _PLAT_EFUSE_H_ */
