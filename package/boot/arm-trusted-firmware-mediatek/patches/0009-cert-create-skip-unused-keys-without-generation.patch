@@ -1,0 +1,47 @@
+Subject: [PATCH] cert_create: only require keys used by requested certificates
+
+CREATE_KEYS=0 must not require SCP/BL32 keys on a platform whose chain
+contains neither image. Keep the existing generate-all behavior for -n.
+
+--- a/tools/cert_create/src/main.c
++++ b/tools/cert_create/src/main.c
+@@ -266,6 +266,29 @@
+ 	}
+ }
+ 
++static bool key_is_needed(int key_id)
++{
++	cert_t *cert;
++	ext_t *ext;
++	int i, j;
++
++	for (i = 0; i < num_certs; i++) {
++		cert = &certs[i];
++		if (cert->fn == NULL)
++			continue;
++		if (cert->key == key_id || certs[cert->issuer].key == key_id)
++			return true;
++		for (j = 0; j < cert->num_ext; j++) {
++			ext = &extensions[cert->ext[j]];
++			if (ext->type == EXT_TYPE_PKEY &&
++			    ext->attr.key == key_id)
++				return true;
++		}
++	}
++
++	return false;
++}
++
+ /* Common command line options */
+ static const cmd_opt_t common_cmd_opt[] = {
+ 	{
+@@ -458,6 +481,9 @@
+ 
+ 	/* Load private keys from files (or generate new ones) */
+ 	for (i = 0 ; i < num_keys ; i++) {
++		if (!new_keys && !key_is_needed(i))
++			continue;
++
+ #if !USING_OPENSSL3
+ 		if (!key_new(&keys[i])) {
+ 			ERROR("Failed to allocate key container\n");
