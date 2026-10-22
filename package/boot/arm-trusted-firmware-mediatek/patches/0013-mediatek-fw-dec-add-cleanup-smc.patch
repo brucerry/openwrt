@@ -1,0 +1,39 @@
+Subject: [PATCH] mediatek: add explicit firmware-key cleanup SMC
+
+--- a/plat/mediatek/apsoc_common/bl31/apsoc_sip_svc_common.c
++++ b/plat/mediatek/apsoc_common/bl31/apsoc_sip_svc_common.c
+@@ -242,6 +242,16 @@
+ 	ret = fw_dec_image(x1, x2, x3);
+ 	SMC_RET1(handle, ret);
+ }
++
++static uintptr_t apsoc_sip_fw_dec_cleanup(uint32_t smc_fid, u_register_t x1,
++					  u_register_t x2, u_register_t x3,
++					  u_register_t x4, void *cookie,
++					  void *handle, u_register_t flags)
++{
++	int ret = fw_dec_cleanup();
++
++	SMC_RET1(handle, ret);
++}
+ #endif /* MTK_FW_ENC_VIA_BL31 */
+ 
+ #ifdef MTK_FW_ENC_VIA_OPTEE
+@@ -317,6 +327,7 @@
+ 	MTK_SIP_CALL_RECORD(MTK_SIP_FW_DEC_SET_IV, apsoc_sip_fw_dec_set_iv),
+ 	MTK_SIP_CALL_RECORD(MTK_SIP_FW_DEC_SET_KEY, apsoc_sip_fw_dec_set_key),
+ 	MTK_SIP_CALL_RECORD(MTK_SIP_FW_DEC_IMAGE, apsoc_sip_fw_dec_image),
++	MTK_SIP_CALL_RECORD(MTK_SIP_FW_DEC_CLEANUP, apsoc_sip_fw_dec_cleanup),
+ #endif
+ };
+ 
+--- a/plat/mediatek/apsoc_common/bl31/apsoc_sip_svc_common.h
++++ b/plat/mediatek/apsoc_common/bl31/apsoc_sip_svc_common.h
+@@ -201,6 +201,7 @@
+  * @r0:		status
+  */
+ #define MTK_SIP_FW_DEC_IMAGE			0xC2000582
++#define MTK_SIP_FW_DEC_CLEANUP			0xC2000584
+ 
+ /*
+  * MTK_SIP_GET_KEY - Get key to OPTEE

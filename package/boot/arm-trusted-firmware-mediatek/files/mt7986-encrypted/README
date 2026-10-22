@@ -1,0 +1,18 @@
+MT7986 encrypted boot-chain overlay
+=================================
+
+MediaTek sources from the supplied MT798x SDK (atf), adapted to the pinned
+TF-A 2025.07.11~78a0dfd9 tree using the existing EHR330 encryption overlay.
+Only the EWS276-FIT encrypted variant installs these files.
+
+FIP payloads use AES-GCM. FIT payloads use the BL31 AES-256-CBC service;
+FIT signatures authenticate the encrypted payloads and their metadata.
+BL2 and the writable UBIFS overlay are not encrypted.
+
+The MediaTek platform-key library is supplied as a binary archive:
+plat/mediatek/apsoc_common/img_dec/roe/release/mtk_plat_key.a
+SHA256: ca19175ab382621d7b60c86a0b594d1f3d828e4e0e3ef8b856d55293747c41f7
+
+The fw_dec service retains the EHR330 last-block forwarding and explicit
+cleanup fixes. MT7986 uses the vendor TRNG v1 entropy implementation.
+No per-device keys or salts belong in this directory.

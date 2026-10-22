@@ -35,7 +35,8 @@ endef
 $(eval $(call Download,mbedtls-tfa))
 
 MTK_TBB_BUILD_DIR=$(PKG_BUILD_DIR)
-PKG_FILE_DEPENDS += $(if $(filter mt7986-ews276-fit-spim-nand-ddr4-signed,$(BUILD_VARIANT)),$(MTK_TBB_KEY_DIR) $(INCLUDE_DIR)/mtk-anti-rollback.mk)
+MTK_TBB_ENCRYPT=$(TFA_ENCRYPT)
+PKG_FILE_DEPENDS += $(if $(filter mt7986-ews276-fit-spim-nand-ddr4-signed mt7986-ews276-fit-spim-nand-ddr4-encrypted,$(BUILD_VARIANT)),$(MTK_TBB_KEY_DIR) $(INCLUDE_DIR)/mtk-anti-rollback.mk)
 
 define Build/Prepare
 	$(call Build/Prepare/Default)
@@ -43,10 +44,13 @@ define Build/Prepare
 	$(if $(TFA_TBB),sed 's/@BL_AR_VER@/$(MTK_BL_AR_VER)/g' \
 		$(CURDIR)/files/ews276-fit-bl-ar-table.xml.in > $(PKG_BUILD_DIR)/ews276-fit-bl-ar-table.xml)
 	$(if $(TFA_TBB),$(CP) $(CURDIR)/files/mt7986-ar/*.a $(PKG_BUILD_DIR)/plat/mediatek/mt7986/drivers/efuse/release/)
+	$(if $(TFA_ENCRYPT),echo 'ca19175ab382621d7b60c86a0b594d1f3d828e4e0e3ef8b856d55293747c41f7  $(CURDIR)/files/mt7986-encrypted/plat/mediatek/apsoc_common/img_dec/roe/release/mtk_plat_key.a' | sha256sum -c -)
+	$(if $(TFA_ENCRYPT),$(CP) $(CURDIR)/files/mt7986-encrypted/. $(PKG_BUILD_DIR)/)
 endef
 
 define Build/Compile
 	$(if $(TFA_TBB),$(MTK_TBB_CHECK_KEYS))
+	$(if $(TFA_ENCRYPT),$(MTK_TBB_CHECK_ENCRYPTION_KEYS))
 	$(call Build/Compile/Trusted-Firmware-A)
 endef
 
@@ -70,6 +74,7 @@ define Trusted-Firmware-A/Default
   FIP_SIZE:=
   SPIM_CTRL:=
   TFA_TBB:=
+  TFA_ENCRYPT:=
 endef
 
 define Trusted-Firmware-A/mt7622-nor-1ddr
@@ -724,6 +729,13 @@ define Trusted-Firmware-A/mt7986-ews276-fit-spim-nand-ddr4-signed
   TFA_TBB:=1
 endef
 
+define Trusted-Firmware-A/mt7986-ews276-fit-spim-nand-ddr4-encrypted
+  $(call Trusted-Firmware-A/mt7986-ews276-fit-spim-nand-ddr4-signed)
+  NAME:=Emplus EWS276-FIT (SPI-NAND, DDR4, signed and encrypted)
+  BUILD_DEVICES:=emplus_ews276-fit-encrypted
+  TFA_ENCRYPT:=1
+endef
+
 TFA_TARGETS:= \
 	mt7622-nor-1ddr \
 	mt7622-nor-2ddr \
@@ -770,6 +782,7 @@ TFA_TARGETS:= \
 	mt7986-spim-nand-ddr4 \
 	mt7986-ews276-fit-spim-nand-ddr4 \
 	mt7986-ews276-fit-spim-nand-ddr4-signed \
+	mt7986-ews276-fit-spim-nand-ddr4-encrypted \
 	mt7986-spim-nand-ubi-ddr4 \
 	mt7986-spim-nand-4k-ddr4 \
 	mt7987-emmc-comb \
@@ -848,5 +861,7 @@ define Package/trusted-firmware-a-mt7986-ews276-fit-spim-nand-ddr4-signed/instal
 	$(call Package/trusted-firmware-a/install)
 	$(INSTALL_DATA) $(PKG_BUILD_DIR)/build/$(PLAT)/release/bl2.img.signkeyhash $(STAGING_DIR_IMAGE)/$(BUILD_VARIANT)-bl2.img.signkeyhash
 endef
+
+Package/trusted-firmware-a-mt7986-ews276-fit-spim-nand-ddr4-encrypted/install = $(Package/trusted-firmware-a-mt7986-ews276-fit-spim-nand-ddr4-signed/install)
 
 $(eval $(call BuildPackage/Trusted-Firmware-A))
