@@ -1,0 +1,10 @@
+// SPDX-License-Identifier: (GPL-2.0 OR MIT)
+
+#include "mt7986a-emplus-ews276-fit.dts"
+
+/ {
+	chosen {
+		/delete-property/ rootdisk;
+		bootargs-append = " root=/dev/ram0 rootfstype=squashfs";
+	};
+};

@@ -3,6 +3,8 @@ DEVICE_VARS += SUPPORTED_TELTONIKA_DEVICES
 DEVICE_VARS += SUPPORTED_TELTONIKA_HW_MODS
 include $(INCLUDE_DIR)/mtk-anti-rollback.mk
 DEVICE_VARS += FIT_KEY_DIR FIT_KEY_NAME FIT_KEY_ALG FIT_AR_VER
+DEVICE_VARS += FIT_ENCRYPT FIT_CIPHER_ALG FIT_MKIMAGE FIT_PLATFORM_KEY
+DEVICE_VARS += FIT_ROE_KEY_SALT FIT_KERNEL_KEY_SALT FIT_ROOTFS_KEY_SALT FIT_ROOTFS_AS_RAMDISK
 
 define Image/Prepare
 	# For UBI we want only one extra block
@@ -1645,6 +1647,14 @@ define Device/emplus_ews276-fit
   FIT_KEY_NAME :=
   FIT_KEY_ALG :=
   FIT_AR_VER :=
+  FIT_ENCRYPT :=
+  FIT_CIPHER_ALG :=
+  FIT_MKIMAGE :=
+  FIT_PLATFORM_KEY :=
+  FIT_ROE_KEY_SALT :=
+  FIT_KERNEL_KEY_SALT :=
+  FIT_ROOTFS_KEY_SALT :=
+  FIT_ROOTFS_AS_RAMDISK :=
   DEVICE_VENDOR := Emplus
   DEVICE_MODEL := EWS276-FIT
   DEVICE_DTS := mt7986a-emplus-ews276-fit mt7986a-emplus-ews276-fit-initramfs
@@ -1686,6 +1696,26 @@ define Device/emplus_ews276-fit-signed
   ARTIFACT/bl2.img.signkeyhash := copy-file $(STAGING_DIR_IMAGE)/mt7986-ews276-fit-spim-nand-ddr4-signed-bl2.img.signkeyhash
 endef
 TARGET_DEVICES += emplus_ews276-fit-signed
+
+define Device/emplus_ews276-fit-encrypted
+  $(call Device/emplus_ews276-fit-signed)
+  DEVICE_MODEL := EWS276-FIT (signed and encrypted)
+  DEVICE_DTS := mt7986a-emplus-ews276-fit-encrypted mt7986a-emplus-ews276-fit-initramfs
+  DEVICE_DTC_FLAGS := --pad 4096
+  IMAGE_SIZE := 32m
+  FIT_ENCRYPT := 1
+  FIT_CIPHER_ALG := tee_aes256
+  FIT_MKIMAGE := $(STAGING_DIR_HOST)/bin/mkimage-mtk-fw-encrypted
+  FIT_PLATFORM_KEY := $(TOPDIR)/keys/mtk-secure-boot/platform_key.bin
+  FIT_ROE_KEY_SALT := $(TOPDIR)/keys/mtk-secure-boot/roe_salt.bin
+  FIT_KERNEL_KEY_SALT := $(TOPDIR)/keys/mtk-secure-boot/kernel_salt.bin
+  FIT_ROOTFS_KEY_SALT := $(TOPDIR)/keys/mtk-secure-boot/rootfs_salt.bin
+  FIT_ROOTFS_AS_RAMDISK := 1
+  ARTIFACT/spim-nand-preloader.bin := mt7986-bl2 ews276-fit-spim-nand-ddr4-encrypted
+  ARTIFACT/spim-nand-bl31-uboot.fip := mt7986-bl31-uboot emplus_ews276-fit-encrypted
+  ARTIFACT/bl2.img.signkeyhash := copy-file $(STAGING_DIR_IMAGE)/mt7986-ews276-fit-spim-nand-ddr4-encrypted-bl2.img.signkeyhash
+endef
+TARGET_DEVICES += emplus_ews276-fit-encrypted
 
 define Device/elecom_wrc-x3000gs3
   DEVICE_VENDOR := ELECOM
