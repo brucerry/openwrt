@@ -1,0 +1,22 @@
+From: OpenWrt EHR330 support <openwrt-devel@lists.openwrt.org>
+Subject: [PATCH] mediatek: use BL31 key for tee_aes256 FIT images
+
+The BL31 backend derives its key internally from the hardware platform key.
+When an IV is carried in the signed FIT, no key node is needed in U-Boot's
+control FDT.
+
+--- a/boot/image-cipher.c
++++ b/boot/image-cipher.c
+@@ -116,6 +116,12 @@ static int fit_image_setup_decrypt(struct image_cipher_info *info,
+ 		return -1;
+ 	}
+ 
++#ifndef USE_HOSTCC
++	if (CONFIG_IS_ENABLED(MTK_FW_ENCRYPT_VIA_BL31) && info->iv &&
++	    !strcmp(algo_name, "tee_aes256"))
++		return 0;
++#endif
++
+ 	/*
+ 	 * Search the cipher node in the u-boot fdt
+ 	 * the path should be: /cipher/key-<algo>-<key>-<iv>

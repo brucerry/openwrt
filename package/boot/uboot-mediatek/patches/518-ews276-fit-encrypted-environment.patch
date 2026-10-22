@@ -1,0 +1,22 @@
+Subject: [PATCH] mediatek: keep EWS276-FIT encrypted boot arguments after env import
+
+--- a/common/main.c
++++ b/common/main.c
+@@ -48,6 +48,17 @@
+ 	if (IS_ENABLED(CONFIG_VERSION_VARIABLE))
+ 		env_set("ver", version_string);  /* set version variable */
+ 
++	if (IS_ENABLED(CONFIG_MTK_FW_ENCRYPT) &&
++	    IS_ENABLED(CONFIG_MT7986_EWS276_FIT)) {
++		/* A saved unsigned environment must not override RAM-root boot. */
++		env_set("bootargs", "console=ttyS0,115200n1 "
++			"earlycon=uart8250,mmio32,0x11002000 "
++			"root=/dev/ram0 rootfstype=squashfs");
++		env_set("bl2file", "openwrt-mediatek-filogic-emplus_ews276-fit-encrypted-spim-nand-preloader.bin");
++		env_set("fipfile", "openwrt-mediatek-filogic-emplus_ews276-fit-encrypted-spim-nand-bl31-uboot.fip");
++		env_set("recoveryfile", "openwrt-mediatek-filogic-emplus_ews276-fit-encrypted-initramfs-recovery.itb");
++	}
++
+ 	cli_init();
+ 
+ 	if (IS_ENABLED(CONFIG_USE_PREBOOT))

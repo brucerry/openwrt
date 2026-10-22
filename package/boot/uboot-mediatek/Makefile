@@ -12,7 +12,7 @@ include $(INCLUDE_DIR)/package.mk
 include $(INCLUDE_DIR)/host-build.mk
 include $(TOPDIR)/package/boot/arm-trusted-firmware-mediatek/secure-boot.mk
 
-PKG_FILE_DEPENDS += $(if $(filter mt7986_emplus_ews276-fit-signed,$(BUILD_VARIANT)),\
+PKG_FILE_DEPENDS += $(if $(filter mt7986_emplus_ews276-fit-signed mt7986_emplus_ews276-fit-encrypted,$(BUILD_VARIANT)),\
 	$(MTK_TBB_KEY_DIR) $(TOPDIR)/package/boot/arm-trusted-firmware-mediatek \
 	$(INCLUDE_DIR)/mtk-anti-rollback.mk)
 
@@ -47,6 +47,7 @@ define U-Boot/Default
   FIT_KEY_DIR:=
   FIT_KEY_NAME:=
   FIT_KEY_ALG:=
+  MTK_FW_ENCRYPT:=
 endef
 
 define U-Boot/mt7620_rfb
@@ -915,6 +916,15 @@ define U-Boot/mt7986_emplus_ews276-fit-signed
   FIT_KEY_ALG:=sha256,rsa2048
 endef
 
+define U-Boot/mt7986_emplus_ews276-fit-encrypted
+  $(call U-Boot/mt7986_emplus_ews276-fit-signed)
+  NAME:=Emplus EWS276-FIT (signed and encrypted)
+  BUILD_DEVICES:=emplus_ews276-fit-encrypted
+  DEPENDS:=+trusted-firmware-a-mt7986-ews276-fit-spim-nand-ddr4-encrypted
+  TFA_TBB_VARIANT:=mt7986-ews276-fit-spim-nand-ddr4-encrypted
+  MTK_FW_ENCRYPT:=1
+endef
+
 define U-Boot/mt7986_glinet_gl-mt6000
   NAME:=GL.iNet GL-MT6000
   BUILD_SUBTARGET:=filogic
@@ -1400,6 +1410,7 @@ UBOOT_TARGETS := \
 	mt7986_zyxel_wx5600-t0 \
 	mt7986_emplus_ews276-fit \
 	mt7986_emplus_ews276-fit-signed \
+	mt7986_emplus_ews276-fit-encrypted \
 	mt7986_rfb \
 	mt7987_bananapi_bpi-r4-lite-emmc \
 	mt7987_bananapi_bpi-r4-lite-sdmmc \
@@ -1425,14 +1436,15 @@ UBOOT_TARGETS := \
 
 UBOOT_CUSTOMIZE_CONFIG = \
 	--disable TOOLS_KWBIMAGE \
-	--disable TOOLS_LIBCRYPTO \
+	$(if $(MTK_FW_ENCRYPT),--enable TOOLS_LIBCRYPTO,--disable TOOLS_LIBCRYPTO) \
 	--disable TOOLS_MKEFICAPSULE \
 	$(if $(TFA_TBB_VARIANT),--enable FIT_SIGNATURE --enable RSA --enable RSA_VERIFY \
 		--enable MT7986_EWS276_FIT_SECURE_BOOT --disable LEGACY_IMAGE_FORMAT \
 		--enable MTK_ANTI_ROLLBACK --disable MTK_AR_UPDATE_AR_VER \
 		--disable CMD_BOOTI --disable CMD_BOOTZ --disable CMD_BOOTEFI \
 		--disable CMD_ELF --disable CMD_GO) \
-	$(if $(MTK_EFUSE_CMD),--enable MTK_EFUSE_CMD)
+	$(if $(MTK_EFUSE_CMD),--enable MTK_EFUSE_CMD) \
+	$(if $(MTK_FW_ENCRYPT),--enable FIT_CIPHER --enable MTK_FW_ENCRYPT --enable MTK_FW_ENCRYPT_VIA_BL31)
 
 ifdef CONFIG_TARGET_mediatek
 UBOOT_MAKE_FLAGS += $(UBOOT_IMAGE:.fip=.bin)
@@ -1441,16 +1453,26 @@ endif
 TFA_TBB_DIR = $(firstword $(wildcard $(BUILD_DIR)/arm-trusted-firmware-mediatek-$(TFA_TBB_VARIANT)/arm-trusted-firmware-mediatek-* ))
 TFA_TBB_RELEASE = $(TFA_TBB_DIR)/build/$(BL2_SOC)/release
 MTK_TBB_BUILD_DIR=$(TFA_TBB_DIR)
+MTK_TBB_ENCRYPT=$(MTK_FW_ENCRYPT)
+
+ifdef CONFIG_TARGET_mediatek
+define Build/Prepare
+	$(call Build/Prepare/Default)
+	$(CP) $(CURDIR)/files/mtk-fw-encryption/. $(PKG_BUILD_DIR)/
+endef
+endif
 
 # Generate certificates only after the final U-Boot contains its required FIT key.
 define Build/tbb-fip-image
 	$(MTK_TBB_CHECK_KEYS)
+	$(if $(MTK_FW_ENCRYPT),$(MTK_TBB_CHECK_ENCRYPTION_KEYS))
 	test -n "$(TFA_TBB_DIR)" && \
 	rm -f $(TFA_TBB_RELEASE)/fip.bin $(TFA_TBB_RELEASE)/trusted_key.crt \
 		$(TFA_TBB_RELEASE)/soc_fw_key.crt $(TFA_TBB_RELEASE)/soc_fw_content.crt \
 		$(TFA_TBB_RELEASE)/nt_fw_key.crt $(TFA_TBB_RELEASE)/nt_fw_content.crt && \
 	$(MAKE) -C $(TFA_TBB_DIR) \
 		PLAT=$(BL2_SOC) BUILD_BASE=$(TFA_TBB_DIR)/build DEBUG=0 \
+		$(if $(MTK_FW_ENCRYPT),BUILD_PLAT=$(TFA_TBB_RELEASE) ENCTOOL=$(TFA_TBB_RELEASE)/tools/encrypt_fw/encrypt_fw) \
 		BOOT_DEVICE=spim-nand DRAM_USE_DDR4=1 NMBM=1 NMBM_NO_CREATE=1 \
 		$(MTK_TBB_FLAGS) \
 		BL31=$(TFA_TBB_RELEASE)/bl31.bin BL33=$(PKG_BUILD_DIR)/u-boot.bin fip && \
@@ -1501,8 +1523,8 @@ endif
 
 define Build/Configure
 	$(call Build/Configure/U-Boot)
-	sed -i 's/CONFIG_TOOLS_LIBCRYPTO=y/# CONFIG_TOOLS_LIBCRYPTO is not set/' $(PKG_BUILD_DIR)/.config
-	$(if $(TFA_TBB_VARIANT),sed -i 's/emplus_ews276-fit-\(initramfs\|spim\|squashfs\)/emplus_ews276-fit-signed-\1/g' $(PKG_BUILD_DIR)/defenvs/emplus_ews276-fit_env)
+	$(if $(MTK_FW_ENCRYPT),:,sed -i 's/CONFIG_TOOLS_LIBCRYPTO=y/# CONFIG_TOOLS_LIBCRYPTO is not set/' $(PKG_BUILD_DIR)/.config)
+	$(if $(TFA_TBB_VARIANT),sed -i 's/emplus_ews276-fit-\(initramfs\|spim\|squashfs\)/emplus_ews276-fit-$(if $(MTK_FW_ENCRYPT),encrypted,signed)-\1/g' $(PKG_BUILD_DIR)/defenvs/emplus_ews276-fit_env)
 endef
 
 define Build/Compile
@@ -1528,6 +1550,7 @@ endif
 define Build/InstallDev
 	$(INSTALL_DIR) $(STAGING_DIR_IMAGE)
 	$(INSTALL_DATA) $(PKG_BUILD_DIR)/$(UBOOT_IMAGE) $(STAGING_DIR_IMAGE)/$(BUILD_VARIANT)-$(UBOOT_IMAGE)
+	$(if $(MTK_FW_ENCRYPT),$(INSTALL_DIR) $(STAGING_DIR_HOST)/bin; $(INSTALL_BIN) $(PKG_BUILD_DIR)/tools/mkimage $(STAGING_DIR_HOST)/bin/mkimage-mtk-fw-encrypted)
 endef
 
 $(eval $(call BuildPackage/U-Boot))
