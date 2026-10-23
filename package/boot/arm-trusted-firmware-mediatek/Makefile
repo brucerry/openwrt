@@ -62,6 +62,9 @@ define Trusted-Firmware-A/Default
   DDR4_4BG_MODE:=
   DDR_TYPE:=
   NAND_TYPE:=
+  NMBM:=
+  NMBM_MAX_RATIO:=
+  NMBM_MAX_RESERVED_BLOCKS:=
   BOARD_QFN:=
   DRAM_USE_COMB:=
   RAM_BOOT_UART_DL:=
@@ -241,14 +244,22 @@ define Trusted-Firmware-A/mt7981-spim-nand-ddr4
   DDR_TYPE:=ddr4
 endef
 
-# Dedicated secure-boot variant for Emplus DAM-AP410 only; keeps the shared
-# mt7981-spim-nand-ddr4 variant (used by other MT7981 boards) unaffected.
-define Trusted-Firmware-A/mt7981-dam-ap410-ddr4
-  NAME:=MediaTek MT7981 (Emplus DAM-AP410, secure boot)
+define Trusted-Firmware-A/mt7981-dam-ap410-unsigned-ddr4
+  NAME:=MediaTek MT7981 (Emplus DAM-AP410, unsigned)
   BOOT_DEVICE:=spim-nand
   BUILD_SUBTARGET:=filogic
+  BUILD_DEVICES:=emplus_dam-ap410_unsigned
   PLAT:=mt7981
   DDR_TYPE:=ddr4
+  NMBM:=1
+  NMBM_MAX_RATIO:=1
+  NMBM_MAX_RESERVED_BLOCKS:=64
+endef
+
+define Trusted-Firmware-A/mt7981-dam-ap410-ddr4
+  $(call Trusted-Firmware-A/mt7981-dam-ap410-unsigned-ddr4)
+  NAME:=MediaTek MT7981 (Emplus DAM-AP410, secure boot)
+  BUILD_DEVICES:=emplus_dam-ap410
   TFA_TRUSTED_BOARD_BOOT:=1
   TFA_GENERATE_COT:=1
   TFA_ROT_KEY:=$(TOPDIR)/keys/mtk-secure-boot/fip_private_key.pem
@@ -810,6 +821,7 @@ TFA_TARGETS:= \
 	mt7981-sdmmc-ddr4 \
 	mt7981-spim-nand-ddr4 \
 	mt7981-dam-ap410-ddr4 \
+	mt7981-dam-ap410-unsigned-ddr4 \
 	mt7981-cudy-ddr3 \
 	mt7981-cudy-ddr4 \
 	mt7986-ram-ddr3 \
@@ -908,6 +920,9 @@ TFA_MAKE_FLAGS += \
 	$(if $(findstring ddr4,$(DDR_TYPE)),DRAM_USE_DDR4=1) \
 	$(if $(BOARD_QFN),BOARD_QFN=1,BOARD_BGA=1) \
 	$(if $(NAND_TYPE),NAND_TYPE=$(NAND_TYPE)) \
+	$(if $(NMBM),NMBM=$(NMBM)) \
+	$(if $(NMBM_MAX_RATIO),NMBM_MAX_RATIO=$(NMBM_MAX_RATIO)) \
+	$(if $(NMBM_MAX_RESERVED_BLOCKS),NMBM_MAX_RESERVED_BLOCKS=$(NMBM_MAX_RESERVED_BLOCKS)) \
 	HAVE_DRAM_OBJ_FILE=yes \
 	$(if $(DDR3_FLYBY),DDR3_FLYBY=1) \
 	$(if $(DDR3_FREQ_1866),DDR3_FREQ_1866=1) \

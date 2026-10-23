@@ -3993,7 +3993,7 @@ define Device/emplus_dam-ap410_unsigned
   IMAGE_SIZE := $$(shell expr 96 + $$(CONFIG_TARGET_ROOTFS_PARTSIZE))m
   IMAGE/sysupgrade.itb := append-kernel | fit gzip $$(KDIR)/image-$$(firstword $$(DEVICE_DTS)).dtb external-with-rootfs | pad-rootfs | append-metadata
   ARTIFACTS := spim-nand-preloader.bin spim-nand-bl31-uboot.fip
-  ARTIFACT/spim-nand-preloader.bin := mt7981-bl2 spim-nand-ddr4
+  ARTIFACT/spim-nand-preloader.bin := mt7981-bl2 dam-ap410-unsigned-ddr4
   ARTIFACT/spim-nand-bl31-uboot.fip := mt7981-bl31-uboot emplus_dam-ap410_unsigned
 endef
 TARGET_DEVICES += emplus_dam-ap410_unsigned

@@ -703,17 +703,17 @@ define U-Boot/mt7987_emplus_ehr330_unsigned
   DEPENDS:=+trusted-firmware-a-mt7987-spim-nand0
 endef
 
-# Plain/unsigned counterpart: shared non-secure TF-A, no FIT signing.
+# Plain/unsigned counterpart: board-specific NMBM-enabled TF-A, no FIT signing.
 define U-Boot/mt7981_emplus_dam-ap410_unsigned
   NAME:=Emplus DAM-AP410 (unsigned)
   BUILD_SUBTARGET:=filogic
   BUILD_DEVICES:=emplus_dam-ap410_unsigned
   UBOOT_CONFIG:=mt7981_emplus_dam-ap410
   UBOOT_IMAGE:=u-boot.fip
-  BL2_BOOTDEV:=spim-nand
+  BL2_BOOTDEV:=dam-ap410-unsigned
   BL2_SOC:=mt7981
   BL2_DDRTYPE:=ddr4
-  DEPENDS:=+trusted-firmware-a-mt7981-spim-nand-ddr4
+  DEPENDS:=+trusted-firmware-a-mt7981-dam-ap410-unsigned-ddr4
 endef
 
 define U-Boot/mt7981_rfb-emmc
@@ -1536,6 +1536,7 @@ define Build/tbb-fip-image
     BUILD_PLAT=$(TFA_TBB_RELEASE) OPENSSL_DIR=/usr DEBUG=0 all &&) \
   $(MAKE) -C $(TFA_TBB_DIR) \
     PLAT=$(TFA_TBB_PLAT) BUILD_BASE=$(TFA_TBB_DIR)/build DEBUG=0 \
+    $(if $(filter mt7981-dam-ap410-ddr4,$(TFA_TBB_VARIANT)),BOOT_DEVICE=spim-nand DRAM_USE_DDR4=1 NMBM=1 NMBM_MAX_RATIO=1 NMBM_MAX_RESERVED_BLOCKS=64) \
     TRUSTED_BOARD_BOOT=1 GENERATE_COT=1 E=0 \
     MBEDTLS_DIR=$(TFA_TBB_DIR)/mbedtls-tfa-3.6.7 \
     ROT_KEY=$(TOPDIR)/keys/mtk-secure-boot/fip_private_key.pem \
