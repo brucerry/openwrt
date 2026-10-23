@@ -891,10 +891,10 @@ define U-Boot/mt7986_rfbb
   BUILD_DEVICES:=mediatek_mt7986b-rfbb
   UBOOT_CONFIG:=mt7986_rfbb
   UBOOT_IMAGE:=u-boot.fip
-  BL2_BOOTDEV:=spim-nand
+  BL2_BOOTDEV:=rfbb
   BL2_SOC:=mt7986
   BL2_DDRTYPE:=ddr3
-  DEPENDS:=+trusted-firmware-a-mt7986-spim-nand-ddr3
+  DEPENDS:=+trusted-firmware-a-mt7986-rfbb-ddr3
 endef
 
 define U-Boot/mt7986_acer_predator-w6x

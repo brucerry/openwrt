@@ -62,6 +62,9 @@ define Trusted-Firmware-A/Default
   DDR4_4BG_MODE:=
   DDR_TYPE:=
   NAND_TYPE:=
+  NMBM:=
+  NMBM_MAX_RATIO:=
+  NMBM_MAX_RESERVED_BLOCKS:=
   BOARD_QFN:=
   DRAM_USE_COMB:=
   RAM_BOOT_UART_DL:=
@@ -491,6 +494,15 @@ define Trusted-Firmware-A/mt7986-spim-nand-ddr3
   DDR_TYPE:=ddr3
 endef
 
+define Trusted-Firmware-A/mt7986-rfbb-ddr3
+  $(call Trusted-Firmware-A/mt7986-spim-nand-ddr3)
+  NAME:=MediaTek MT7986B RFBB (SPI-NAND via SPIM, DDR3, NMBM)
+  BUILD_DEVICES:=mediatek_mt7986b-rfbb
+  NMBM:=1
+  NMBM_MAX_RATIO:=1
+  NMBM_MAX_RESERVED_BLOCKS:=256
+endef
+
 define Trusted-Firmware-A/mt7986-spim-nand-ubi-ddr3
   NAME:=MediaTek MT7986 (SPI-NAND via SPIM using UBI, DDR3)
   BOOT_DEVICE:=spim-nand
@@ -818,6 +830,7 @@ TFA_TARGETS:= \
 	mt7986-sdmmc-ddr3 \
 	mt7986-snand-ddr3 \
 	mt7986-spim-nand-ddr3 \
+	mt7986-rfbb-ddr3 \
 	mt7986-spim-nand-ubi-ddr3 \
 	mt7986-spim-nand-4k-ddr3 \
 	mt7986-ram-ddr4 \
@@ -908,6 +921,9 @@ TFA_MAKE_FLAGS += \
 	$(if $(findstring ddr4,$(DDR_TYPE)),DRAM_USE_DDR4=1) \
 	$(if $(BOARD_QFN),BOARD_QFN=1,BOARD_BGA=1) \
 	$(if $(NAND_TYPE),NAND_TYPE=$(NAND_TYPE)) \
+	$(if $(NMBM),NMBM=$(NMBM)) \
+	$(if $(NMBM_MAX_RATIO),NMBM_MAX_RATIO=$(NMBM_MAX_RATIO)) \
+	$(if $(NMBM_MAX_RESERVED_BLOCKS),NMBM_MAX_RESERVED_BLOCKS=$(NMBM_MAX_RESERVED_BLOCKS)) \
 	HAVE_DRAM_OBJ_FILE=yes \
 	$(if $(DDR3_FLYBY),DDR3_FLYBY=1) \
 	$(if $(DDR3_FREQ_1866),DDR3_FREQ_1866=1) \

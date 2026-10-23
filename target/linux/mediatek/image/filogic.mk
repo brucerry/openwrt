@@ -2410,7 +2410,7 @@ define Device/mediatek_mt7986b-rfbb
   DEVICE_PACKAGES := kmod-usb3 kmod-mt7915e kmod-mt7986-firmware mt7986-wo-firmware \
 	mt7986b-rfbb-caldata mt7986b-rfbb-defaults
   ARTIFACTS := preloader.bin bl31-uboot.fip
-  ARTIFACT/preloader.bin := mt7986-bl2 spim-nand-ddr3
+  ARTIFACT/preloader.bin := mt7986-bl2 rfbb-ddr3
   ARTIFACT/bl31-uboot.fip := mt7986-bl31-uboot rfbb
 endef
 TARGET_DEVICES += mediatek_mt7986b-rfbb

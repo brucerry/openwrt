@@ -1,6 +1,6 @@
 --- /dev/null
 +++ b/configs/mt7986_rfbb_defconfig
-@@ -0,0 +1,121 @@
+@@ -0,0 +1,125 @@
 +CONFIG_ARM=y
 +CONFIG_SYS_HAS_NONCACHED_MEMORY=y
 +CONFIG_POSITION_INDEPENDENT=y
@@ -93,6 +93,10 @@
 +CONFIG_MTD=y
 +CONFIG_DM_MTD=y
 +CONFIG_MTD_SPI_NAND=y
++CONFIG_NMBM=y
++CONFIG_NMBM_MTD=y
++CONFIG_MTDIDS_DEFAULT="nmbm0=nmbm0"
++CONFIG_MTDPARTS_DEFAULT="mtdparts=nmbm0:1024k(bl2),512k(orig-env),2048k(factory),2048k(fip),117248k(ubi)"
 +CONFIG_MTD_UBI_FASTMAP=y
 +CONFIG_PHY_FIXED=y
 +CONFIG_MEDIATEK_ETH=y
@@ -124,7 +128,7 @@
 +CONFIG_HEXDUMP=y
 --- /dev/null
 +++ b/arch/arm/dts/mt7986b-rfbb.dts
-@@ -0,0 +1,165 @@
+@@ -0,0 +1,135 @@
 +// SPDX-License-Identifier: GPL-2.0
 +/*
 + * Copyright (c) 2021 MediaTek Inc.
@@ -140,7 +144,7 @@
 +	#address-cells = <1>;
 +	#size-cells = <1>;
 +	model = "MediaTek MT7986B RFBB AP";
-+	compatible = "mediatek,mt7986", "mediatek,mt7986-rfb";
++	compatible = "mediatek,mt7986b-rfbb", "mediatek,mt7986", "mediatek,mt7986-rfb";
 +
 +	chosen {
 +		stdout-path = &uart0;
@@ -254,36 +258,6 @@
 +		reg = <1>;
 +		spi-max-frequency = <52000000>;
 +
-+		partitions {
-+			compatible = "fixed-partitions";
-+			#address-cells = <1>;
-+			#size-cells = <1>;
-+
-+			partition@0 {
-+				label = "bl2";
-+				reg = <0x0 0x100000>;
-+			};
-+
-+			partition@100000 {
-+				label = "orig-env";
-+				reg = <0x100000 0x80000>;
-+			};
-+
-+			partition@180000 {
-+				label = "factory";
-+				reg = <0x180000 0x200000>;
-+			};
-+
-+			partition@380000 {
-+				label = "fip";
-+				reg = <0x380000 0x200000>;
-+			};
-+
-+			partition@580000 {
-+				label = "ubi";
-+				reg = <0x580000 0x7280000>;
-+			};
-+		};
 +	};
 +};
 +
@@ -292,10 +266,12 @@
 +};
 --- /dev/null
 +++ b/defenvs/mt7986_rfbb_env
-@@ -0,0 +1,57 @@
+@@ -0,0 +1,59 @@
 +ipaddr=192.168.1.1
 +serverip=192.168.1.254
 +loadaddr=0x46000000
++mtdids=nmbm0=nmbm0
++mtdparts=nmbm0:1024k(bl2),512k(orig-env),2048k(factory),2048k(fip),117248k(ubi)
 +console=earlycon=uart8250,mmio32,0x11002000 console=ttyS0
 +bootcmd=if pstore check ; then run boot_recovery ; else run boot_ubi ; fi
 +bootconf=config-1
@@ -350,3 +326,53 @@
 +_firstboot=setenv _firstboot ; run ethaddr_factory ; run _switch_to_menu ; run _init_env ; run boot_first
 +_switch_to_menu=setenv _switch_to_menu ; setenv bootdelay 3 ; setenv bootmenu_delay 3 ; setenv bootmenu_0 $bootmenu_0d ; setenv bootmenu_0d ; run _bootmenu_update_title
 +_bootmenu_update_title=setenv _bootmenu_update_title ; setenv bootmenu_title "$bootmenu_title       $ver"
+--- a/board/mediatek/mt7986/mt7986_rfb.c
++++ b/board/mediatek/mt7986/mt7986_rfb.c
+@@ -43,8 +43,47 @@ int board_late_init(void)
+ 	return 0;
+ }
+ 
++#if CONFIG_IS_ENABLED(NMBM_MTD)
++static int rfbb_nmbm_init(void)
++{
++	struct mtd_info *lower, *upper;
++	int ret;
++
++	printf("\nInitializing NMBM ...\n");
++	ret = mtd_probe_devices();
++	if (ret)
++		return ret;
++
++	lower = get_mtd_device_nm("spi-nand0");
++	if (IS_ERR_OR_NULL(lower))
++		return lower ? PTR_ERR(lower) : -ENODEV;
++
++	ret = nmbm_attach_mtd(lower,
++			      NMBM_F_CREATE | NMBM_F_EMPTY_PAGE_ECC_OK,
++			      1, 256, &upper);
++	if (ret)
++		goto put_lower;
++
++	ret = add_mtd_device(upper);
++	if (ret) {
++		nmbm_free_mtd(upper);
++		goto put_lower;
++	}
++
++	return mtd_probe_devices();
++
++put_lower:
++	put_mtd_device(lower);
++	return ret;
++}
++#endif
++
+ int board_nmbm_init(void)
+ {
++#if CONFIG_IS_ENABLED(NMBM_MTD)
++	if (of_machine_is_compatible("mediatek,mt7986b-rfbb"))
++		return rfbb_nmbm_init();
++#endif
+ #ifdef CONFIG_ENABLE_NAND_NMBM
+ 	struct mtd_info *lower, *upper;
+ 	int ret;
